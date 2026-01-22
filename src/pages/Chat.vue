@@ -168,12 +168,15 @@ const router = useRouter();
 const userStore = useUserStore();
 const { send, on, connect } = useWebSocket();
 
-const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const apiBase =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:8080" : "");
 
 const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
 const messages = ref<Message[]>([]);
 
+// ... rest of the code remains the same ...
 // 当前登录用户
 const currentUser = computed(() => userStore.currentUser);
 

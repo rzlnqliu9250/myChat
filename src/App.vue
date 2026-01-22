@@ -10,7 +10,11 @@ import { WebSocketManager } from "./services/WebSocketManager";
 
 // 提供 WebSocketManager 实例
 // 实际应用中，WebSocket URL 应该从环境变量或配置文件中获取
-const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8080";
+const wsUrl =
+  import.meta.env.VITE_WS_URL ||
+  (import.meta.env.DEV
+    ? "ws://localhost:8080"
+    : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`);
 const token = localStorage.getItem("token") || "";
 
 const wsManager = new WebSocketManager(wsUrl, token);

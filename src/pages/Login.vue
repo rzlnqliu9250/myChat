@@ -51,7 +51,9 @@ const router = useRouter();
 const userStore = useUserStore();
 const { connect, wsManager } = useWebSocket();
 
-const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const apiBase =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:8080" : "");
 
 const loading = ref(false);
 const form = ref({
