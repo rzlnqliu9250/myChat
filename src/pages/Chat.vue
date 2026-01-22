@@ -503,10 +503,15 @@ onMounted(() => {
         (m) => m.id === message.clientMessageId,
       );
       if (idx >= 0) {
+        const existing = messages.value[idx];
+        if (!existing) {
+          return;
+        }
+
         messages.value[idx] = {
-          ...messages.value[idx],
+          ...existing,
           id: String(message.id),
-          status: message.status || messages.value[idx].status,
+          status: message.status || existing.status,
           updateTime: message.updateTime || Date.now(),
         };
         return;
