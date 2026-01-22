@@ -1,25 +1,42 @@
 // src/index.ts
 import http from "http";
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import path from "path";
 import { logger } from "./utils/logger";
 import { ChatWebSocketServer } from "./server/WebSocketServer";
+import { authRouter } from "./routes/auth";
+import { friendsRouter } from "./routes/friends";
+import { messagesRouter } from "./routes/messages";
+import { errorHandler } from "./middleware/errorHandler";
 
-const PORT = process.env.PORT || 3001;
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+dotenv.config({ path: path.resolve(process.cwd(), "..", ".env") });
+
+const PORT = process.env.PORT || 8080;
 
 class ChatServer {
   private server: http.Server;
   private wsServer: ChatWebSocketServer;
 
   constructor() {
-    // 创建HTTP服务器
-    this.server = http.createServer((req, res) => {
-      if (req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", timestamp: Date.now() }));
-      } else {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Not found" }));
-      }
+    const app = express();
+
+    app.use(cors());
+    app.use(express.json());
+
+    app.get("/health", (_req, res) => {
+      res.status(200).json({ status: "ok", timestamp: Date.now() });
     });
+
+    app.use("/api", authRouter);
+    app.use("/api", friendsRouter);
+    app.use("/api", messagesRouter);
+
+    app.use(errorHandler);
+
+    this.server = http.createServer(app);
 
     // 初始化WebSocket服务器
     this.wsServer = new ChatWebSocketServer(this.server);

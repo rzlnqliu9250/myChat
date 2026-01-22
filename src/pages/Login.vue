@@ -49,7 +49,9 @@ import { useWebSocket } from "../composables/useWebSocket";
 
 const router = useRouter();
 const userStore = useUserStore();
-const { connect } = useWebSocket();
+const { connect, wsManager } = useWebSocket();
+
+const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 const loading = ref(false);
 const form = ref({
@@ -60,19 +62,40 @@ const form = ref({
 const handleLogin = async () => {
   loading.value = true;
   try {
-    // 模拟登录逻辑（实际应该调用API）
-    const mockUser = {
-      id: `user_${Date.now()}`,
-      username: form.value.username,
-      nickname: form.value.username,
-      status: "online" as const,
-      lastOnline: Date.now(),
+    const loginResp = await fetch(`${apiBase}/api/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: form.value.username,
+        password: form.value.password,
+      }),
+    });
+
+    if (!loginResp.ok) {
+      const err = (await loginResp.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(err?.error || "登录失败");
+    }
+
+    const loginData = (await loginResp.json()) as {
+      token: string;
+      user: { id: string; username: string; avatarUrl?: string | null };
     };
 
-    // 保存用户信息到store
-    userStore.setCurrentUser(mockUser);
-    // 保存token（模拟）
-    userStore.setToken("mock-token-" + Date.now());
+    userStore.setCurrentUser({
+      id: loginData.user.id,
+      username: loginData.user.username,
+      nickname: loginData.user.username,
+      avatar: loginData.user.avatarUrl || undefined,
+      status: "online" as const,
+      lastOnline: Date.now(),
+    });
+    userStore.setToken(loginData.token);
+
+    wsManager.setToken(loginData.token);
 
     // 连接WebSocket
     await connect();

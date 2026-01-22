@@ -22,19 +22,10 @@ export type MessageStatusValue =
 export interface Message {
   id: string;
   senderId: string;
-  receiverId: string; // 单聊是用户ID，群聊是群组ID
-  groupId?: string; // 群聊时的群组ID
+  receiverId: string;
   content: string;
   type: MessageTypeValue;
   status: MessageStatusValue;
   createTime: number;
   updateTime: number;
-}
-
-export interface Group {
-  id: string;
-  name: string;
-  avatar?: string;
-  memberIds: string[];
-  createTime: number;
 }

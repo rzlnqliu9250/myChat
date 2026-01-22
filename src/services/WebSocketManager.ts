@@ -52,6 +52,10 @@ export class WebSocketManager {
     this.token = token;
   }
 
+  public setToken(token: string): void {
+    this.token = token;
+  }
+
   /**
    * 建立 WebSocket 连接
    */

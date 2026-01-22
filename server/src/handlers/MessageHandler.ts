@@ -2,7 +2,7 @@
 import { WebSocketMessage, WebSocketEvent, Client } from "../types";
 import { logger } from "../utils/logger";
 import { userManager } from "../managers/UserManager";
-import { groupManager } from "../managers/GroupManager";
+import { supabase } from "../db/supabase";
 
 class MessageHandler {
   /**
@@ -19,10 +19,7 @@ class MessageHandler {
         this.handleLogin(message, client);
         break;
       case WebSocketEvent.MESSAGE_RECEIVE:
-        this.handleSingleChat(message, client);
-        break;
-      case WebSocketEvent.GROUP_MESSAGE:
-        this.handleGroupChat(message, client);
+        void this.handleSingleChat(message, client);
         break;
       case WebSocketEvent.MESSAGE_READ:
         this.handleMessageRead(message, client);
@@ -52,6 +49,8 @@ class MessageHandler {
   private handleLogin(message: WebSocketMessage, client: Client): void {
     const { userId, username, nickname } = message.data;
 
+    const wasOnline = userManager.isUserOnline(userId);
+
     // 更新用户信息
     const userInfo = {
       id: userId,
@@ -65,7 +64,9 @@ class MessageHandler {
     userManager.addUser(client.socket, userId, userInfo);
 
     // 通知其他用户该用户上线
-    userManager.notifyUserOnline(userId);
+    if (!wasOnline) {
+      userManager.notifyUserOnline(userId);
+    }
 
     // 发送登录成功响应
     const response: WebSocketMessage = {
@@ -86,37 +87,80 @@ class MessageHandler {
   /**
    * 处理单聊消息
    */
-  private handleSingleChat(message: WebSocketMessage, client: Client): void {
-    const { receiverId, content, type } = message.data;
+  private async handleSingleChat(
+    message: WebSocketMessage,
+    client: Client,
+  ): Promise<void> {
+    const { receiverId, content, type, clientMessageId } = message.data;
 
-    // 生成消息ID（实际应用中应该使用更可靠的ID生成方式）
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    if (!receiverId || typeof content !== "string") {
+      logger.warn("Invalid single chat payload");
+      return;
+    }
 
-    // 创建消息对象
+    const createdAt = new Date().toISOString();
+    const insertResult = await supabase
+      .from("messages")
+      .insert({
+        sender_id: client.userId,
+        receiver_id: receiverId,
+        content,
+        is_read: false,
+      })
+      .select("id, created_at")
+      .single();
+
+    if (insertResult.error || !insertResult.data) {
+      logger.error("Failed to persist message:", insertResult.error);
+
+      const failedMessage: WebSocketMessage = {
+        type: WebSocketEvent.MESSAGE_RECEIVE,
+        data: {
+          clientMessageId,
+          id: `temp_${Date.now()}`,
+          senderId: client.userId,
+          receiverId,
+          content,
+          type,
+          status: "failed" as const,
+          createTime: Date.now(),
+          updateTime: Date.now(),
+        },
+        timestamp: Date.now(),
+      };
+
+      userManager.sendMessageToUser(client.userId, failedMessage);
+      return;
+    }
+
+    const messageId = String(insertResult.data.id);
+    const createTimeMs = insertResult.data.created_at
+      ? new Date(insertResult.data.created_at).getTime()
+      : new Date(createdAt).getTime();
+
     const chatMessage: WebSocketMessage = {
       type: WebSocketEvent.MESSAGE_RECEIVE,
       data: {
+        clientMessageId,
         id: messageId,
         senderId: client.userId,
         receiverId,
         content,
         type,
         status: "sent" as const,
-        createTime: Date.now(),
-        updateTime: Date.now(),
+        createTime: createTimeMs,
+        updateTime: createTimeMs,
       },
       timestamp: Date.now(),
     };
 
-    // 发送消息给接收方
-    const sent = userManager.sendMessageToUser(receiverId, chatMessage);
+    const delivered = userManager.sendMessageToUser(receiverId, chatMessage);
 
-    // 发送消息状态给发送方
     const statusMessage: WebSocketMessage = {
       type: WebSocketEvent.MESSAGE_RECEIVE,
       data: {
         ...chatMessage.data,
-        status: sent ? "delivered" : "failed",
+        status: delivered ? ("delivered" as const) : ("sent" as const),
       },
       timestamp: Date.now(),
     };
@@ -125,45 +169,6 @@ class MessageHandler {
 
     logger.info(
       `Single chat message from ${client.userId} to ${receiverId}: ${content.substring(0, 20)}...`,
-    );
-  }
-
-  /**
-   * 处理群聊消息
-   */
-  private handleGroupChat(message: WebSocketMessage, client: Client): void {
-    const { groupId, content, type } = message.data;
-
-    // 检查用户是否在群组中
-    if (!groupManager.isUserInGroup(groupId, client.userId)) {
-      logger.warn(`User ${client.userId} is not in group ${groupId}`);
-      return;
-    }
-
-    // 生成消息ID
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // 创建群聊消息对象
-    const groupMessage: WebSocketMessage = {
-      type: WebSocketEvent.GROUP_MESSAGE,
-      data: {
-        id: messageId,
-        senderId: client.userId,
-        groupId,
-        content,
-        type,
-        status: "sent" as const,
-        createTime: Date.now(),
-        updateTime: Date.now(),
-      },
-      timestamp: Date.now(),
-    };
-
-    // 发送消息给群组所有成员
-    groupManager.sendMessageToGroup(groupId, groupMessage);
-
-    logger.info(
-      `Group message from ${client.userId} to group ${groupId}: ${content.substring(0, 20)}...`,
     );
   }
 

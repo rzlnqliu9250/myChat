@@ -9,7 +9,6 @@ export enum WebSocketEvent {
   MESSAGE_RECEIVE = "message_receive",
   USER_ONLINE = "user_online",
   USER_OFFLINE = "user_offline",
-  GROUP_MESSAGE = "group_message",
   MESSAGE_READ = "message_read",
   LOGIN = "login",
 }
@@ -38,18 +37,9 @@ export interface Message {
   id: string;
   senderId: string;
   receiverId: string;
-  groupId?: string;
   content: string;
   type: "text" | "image" | "file" | "system";
   status: "sending" | "sent" | "delivered" | "read" | "failed";
   createTime: number;
   updateTime: number;
-}
-
-export interface Group {
-  id: string;
-  name: string;
-  avatar?: string;
-  memberIds: string[];
-  createTime: number;
 }

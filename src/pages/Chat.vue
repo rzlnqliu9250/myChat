@@ -27,6 +27,65 @@
         />
       </div>
 
+      <div class="friend-actions">
+        <div class="friend-actions-title">添加好友</div>
+        <div class="friend-request-form">
+          <input
+            v-model="friendRequestUsername"
+            class="friend-request-input"
+            placeholder="输入对方用户名"
+            type="text"
+          />
+          <button
+            class="friend-request-button"
+            :disabled="friendRequestLoading || !friendRequestUsername"
+            @click="sendFriendRequest"
+          >
+            发送
+          </button>
+        </div>
+        <div v-if="friendRequestError" class="friend-request-error">
+          {{ friendRequestError }}
+        </div>
+        <div v-if="friendRequestSuccess" class="friend-request-success">
+          {{ friendRequestSuccess }}
+        </div>
+      </div>
+
+      <div class="friend-requests" v-if="incomingRequests.length">
+        <div class="friend-requests-title">
+          好友申请
+          <span class="friend-requests-count"
+            >({{ incomingRequests.length }})</span
+          >
+        </div>
+        <div
+          v-for="req in incomingRequests"
+          :key="req.id"
+          class="friend-request-item"
+        >
+          <div class="friend-request-user">
+            {{ req.fromUser?.nickname || req.fromUser?.username || "未知用户" }}
+          </div>
+          <div class="friend-request-actions">
+            <button
+              class="friend-request-action accept"
+              :disabled="requestActionLoadingIds.has(req.id)"
+              @click="acceptRequest(req.id)"
+            >
+              同意
+            </button>
+            <button
+              class="friend-request-action reject"
+              :disabled="requestActionLoadingIds.has(req.id)"
+              @click="rejectRequest(req.id)"
+            >
+              拒绝
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 好友列表 -->
       <div class="friend-list">
         <h4 class="friend-list-title">好友列表</h4>
@@ -109,6 +168,8 @@ const router = useRouter();
 const userStore = useUserStore();
 const { send, on, connect } = useWebSocket();
 
+const apiBase = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
 const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
 const messages = ref<Message[]>([]);
@@ -116,46 +177,254 @@ const messages = ref<Message[]>([]);
 // 当前登录用户
 const currentUser = computed(() => userStore.currentUser);
 
-// 模拟好友列表数据
-const mockFriends = ref([
-  {
-    id: "user1",
-    username: "friend1",
-    nickname: "张三",
-    status: "online" as const,
-  },
-  {
-    id: "user2",
-    username: "friend2",
-    nickname: "李四",
-    status: "offline" as const,
-  },
-  {
-    id: "user3",
-    username: "friend3",
-    nickname: "王五",
-    status: "busy" as const,
-  },
-  {
-    id: "user4",
-    username: "friend4",
-    nickname: "赵六",
-    status: "online" as const,
-  },
-  {
-    id: "user5",
-    username: "friend5",
-    nickname: "孙七",
-    status: "away" as const,
-  },
-]);
+type ApiFriend = {
+  id: string;
+  username: string;
+  nickname: string;
+  avatarUrl: string | null;
+  online: boolean;
+};
+
+type UiFriend = ApiFriend & {
+  status: "online" | "offline";
+};
+
+const friends = ref<UiFriend[]>([]);
+
+type IncomingRequest = {
+  id: string;
+  fromUser: {
+    id: string;
+    username: string;
+    nickname: string;
+    avatarUrl: string | null;
+  } | null;
+  createdAt: string;
+  status: string;
+};
+
+const friendRequestUsername = ref("");
+const friendRequestLoading = ref(false);
+const friendRequestError = ref<string | null>(null);
+const friendRequestSuccess = ref<string | null>(null);
+
+const incomingRequests = ref<IncomingRequest[]>([]);
+const requestActionLoadingIds = ref(new Set<string>());
+
+const fetchFriends = async () => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const resp = await fetch(`${apiBase}/api/friends`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!resp.ok) {
+    const err = (await resp.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(err?.error || "加载好友失败");
+  }
+
+  const data = (await resp.json()) as { friends: ApiFriend[] };
+  friends.value = (data.friends || []).map((f) => ({
+    ...f,
+    status: f.online ? ("online" as const) : ("offline" as const),
+  }));
+
+  userStore.setFriends(
+    friends.value.map((f) => ({
+      id: f.id,
+      username: f.username,
+      nickname: f.nickname,
+      avatar: f.avatarUrl || undefined,
+      status: f.status,
+    })),
+  );
+};
+
+const fetchMessages = async (friendId: string) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const resp = await fetch(`${apiBase}/api/messages/${friendId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!resp.ok) {
+    const err = (await resp.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(err?.error || "加载聊天记录失败");
+  }
+
+  const data = (await resp.json()) as {
+    messages: {
+      id: string;
+      senderId: string;
+      receiverId: string;
+      content: string;
+      isRead: boolean;
+      createdAt: string;
+    }[];
+  };
+
+  messages.value = (data.messages || []).map((m) => {
+    const ts = new Date(m.createdAt).getTime();
+    return {
+      id: m.id,
+      senderId: m.senderId,
+      receiverId: m.receiverId,
+      content: m.content,
+      type: "text" as const,
+      status: m.isRead ? ("read" as const) : ("delivered" as const),
+      createTime: ts,
+      updateTime: ts,
+    } satisfies Message;
+  });
+};
+
+const fetchIncomingRequests = async () => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const resp = await fetch(`${apiBase}/api/friends/requests`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!resp.ok) {
+    const err = (await resp.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(err?.error || "加载好友申请失败");
+  }
+
+  const data = (await resp.json()) as { requests: IncomingRequest[] };
+  incomingRequests.value = data.requests || [];
+};
+
+const sendFriendRequest = async () => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  friendRequestLoading.value = true;
+  friendRequestError.value = null;
+  friendRequestSuccess.value = null;
+
+  try {
+    const resp = await fetch(`${apiBase}/api/friends/request`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ username: friendRequestUsername.value }),
+    });
+
+    if (!resp.ok) {
+      const err = (await resp.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(err?.error || "发送好友申请失败");
+    }
+
+    friendRequestSuccess.value = "已发送好友申请";
+    friendRequestUsername.value = "";
+    await fetchIncomingRequests();
+  } catch (e) {
+    friendRequestError.value =
+      e instanceof Error ? e.message : "发送好友申请失败";
+  } finally {
+    friendRequestLoading.value = false;
+  }
+};
+
+const acceptRequest = async (requestId: string) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  requestActionLoadingIds.value.add(requestId);
+  try {
+    const resp = await fetch(
+      `${apiBase}/api/friends/requests/${requestId}/accept`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const err = (await resp.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(err?.error || "同意失败");
+    }
+
+    await Promise.all([fetchIncomingRequests(), fetchFriends()]);
+  } catch (e) {
+    friendRequestError.value = e instanceof Error ? e.message : "同意失败";
+  } finally {
+    requestActionLoadingIds.value.delete(requestId);
+  }
+};
+
+const rejectRequest = async (requestId: string) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  requestActionLoadingIds.value.add(requestId);
+  try {
+    const resp = await fetch(
+      `${apiBase}/api/friends/requests/${requestId}/reject`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const err = (await resp.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(err?.error || "拒绝失败");
+    }
+
+    await fetchIncomingRequests();
+  } catch (e) {
+    friendRequestError.value = e instanceof Error ? e.message : "拒绝失败";
+  } finally {
+    requestActionLoadingIds.value.delete(requestId);
+  }
+};
 
 // 筛选好友
 const filteredFriends = computed(() => {
   if (!searchQuery.value) {
-    return mockFriends.value;
+    return friends.value;
   }
-  return mockFriends.value.filter(
+  return friends.value.filter(
     (friend) =>
       friend.nickname.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       friend.username.toLowerCase().includes(searchQuery.value.toLowerCase()),
@@ -163,47 +432,9 @@ const filteredFriends = computed(() => {
 });
 
 // 选择好友
-const selectFriend = (friend: any) => {
+const selectFriend = async (friend: any) => {
   selectedFriend.value = friend;
-  // 获取与该好友的聊天记录（模拟）
-  loadMessages(friend.id);
-};
-
-// 加载聊天记录
-const loadMessages = (friendId: string) => {
-  // 模拟加载聊天记录
-  messages.value = [
-    {
-      id: "msg1",
-      senderId: friendId,
-      receiverId: currentUser.value?.id || "",
-      content: "你好！",
-      type: "text" as const,
-      status: "read" as const,
-      createTime: Date.now() - 3600000,
-      updateTime: Date.now() - 3600000,
-    },
-    {
-      id: "msg2",
-      senderId: currentUser.value?.id || "",
-      receiverId: friendId,
-      content: "你好！最近怎么样？",
-      type: "text" as const,
-      status: "read" as const,
-      createTime: Date.now() - 3500000,
-      updateTime: Date.now() - 3500000,
-    },
-    {
-      id: "msg3",
-      senderId: friendId,
-      receiverId: currentUser.value?.id || "",
-      content: "挺好的，谢谢！",
-      type: "text" as const,
-      status: "read" as const,
-      createTime: Date.now() - 3400000,
-      updateTime: Date.now() - 3400000,
-    },
-  ];
+  await fetchMessages(friend.id);
 };
 
 // 发送消息
@@ -212,8 +443,10 @@ const handleSendMessage = (content: string) => {
     return;
   }
 
+  const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
   const message: Message = {
-    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: clientMessageId,
     senderId: currentUser.value.id,
     receiverId: selectedFriend.value.id,
     content: content,
@@ -228,27 +461,11 @@ const handleSendMessage = (content: string) => {
 
   // 发送消息到服务器（实际应该通过WebSocket发送）
   send("message_receive" as any, {
+    clientMessageId,
     content: content,
     receiverId: selectedFriend.value.id,
     type: "text",
   });
-
-  // 模拟对方回复
-  setTimeout(() => {
-    if (!currentUser.value) return;
-
-    const reply: Message = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      senderId: selectedFriend.value.id,
-      receiverId: currentUser.value.id,
-      content: `你好，${currentUser.value.nickname}！这是一条自动回复。`,
-      type: "text" as const,
-      status: "read" as const,
-      createTime: Date.now(),
-      updateTime: Date.now(),
-    };
-    messages.value.push(reply);
-  }, 1000);
 };
 
 // 退出登录
@@ -268,13 +485,53 @@ onMounted(() => {
   // 连接WebSocket
   connect();
 
-  // 模拟加载好友列表
-  userStore.setFriends(mockFriends.value);
+  void fetchFriends().catch((e) => console.error(e));
+  void fetchIncomingRequests().catch((e) => console.error(e));
 
   // 监听新消息
   on("message_receive" as any, (message: any) => {
-    console.log("收到新消息:", message);
-    // 处理收到的消息
+    if (!message) {
+      return;
+    }
+
+    const me = currentUser.value?.id;
+    const friendId = selectedFriend.value?.id;
+
+    // 如果是我发出的消息回执：用 clientMessageId 找到本地 sending 消息并更新
+    if (message.clientMessageId && me && message.senderId === me) {
+      const idx = messages.value.findIndex(
+        (m) => m.id === message.clientMessageId,
+      );
+      if (idx >= 0) {
+        messages.value[idx] = {
+          ...messages.value[idx],
+          id: String(message.id),
+          status: message.status || messages.value[idx].status,
+          updateTime: message.updateTime || Date.now(),
+        };
+        return;
+      }
+    }
+
+    // 其他情况：如果当前正在跟该好友聊天，则追加
+    const isCurrentConversation =
+      me &&
+      friendId &&
+      ((message.senderId === friendId && message.receiverId === me) ||
+        (message.senderId === me && message.receiverId === friendId));
+
+    if (isCurrentConversation) {
+      messages.value.push({
+        id: String(message.id),
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        content: message.content,
+        type: (message.type || "text") as any,
+        status: (message.status || "delivered") as any,
+        createTime: message.createTime || Date.now(),
+        updateTime: message.updateTime || Date.now(),
+      });
+    }
   });
 });
 </script>
@@ -374,6 +631,114 @@ onMounted(() => {
 
 .search-input:focus {
   border-color: #646cff;
+}
+
+.friend-actions {
+  padding: 12px 15px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.friend-actions-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.friend-request-form {
+  display: flex;
+  gap: 8px;
+}
+
+.friend-request-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.friend-request-button {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background-color: #646cff;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.friend-request-button:disabled {
+  background-color: #a5a9ff;
+  cursor: not-allowed;
+}
+
+.friend-request-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #d32f2f;
+}
+
+.friend-request-success {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #2e7d32;
+}
+
+.friend-requests {
+  padding: 12px 15px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.friend-requests-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.friend-requests-count {
+  color: #999;
+}
+
+.friend-request-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.friend-request-user {
+  font-size: 14px;
+  color: #333;
+}
+
+.friend-request-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.friend-request-action {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: white;
+}
+
+.friend-request-action.accept {
+  background-color: #42b883;
+}
+
+.friend-request-action.reject {
+  background-color: #ff5252;
+}
+
+.friend-request-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* 好友列表样式 */

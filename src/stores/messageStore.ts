@@ -5,8 +5,8 @@ import type { Message, MessageStatusValue } from "../models/Message";
 export const useMessageStore = defineStore("message", {
   state: () => ({
     messages: [] as Message[],
-    conversations: new Map<string, Message[]>(), // key: userId/groupId, value: messages
-    unreadCount: new Map<string, number>(), // key: userId/groupId, value: unread count
+    conversations: new Map<string, Message[]>(),
+    unreadCount: new Map<string, number>(),
   }),
 
   getters: {
@@ -33,7 +33,7 @@ export const useMessageStore = defineStore("message", {
       this.messages.push(message);
 
       // 添加到对应会话
-      const conversationId = message.groupId || message.receiverId;
+      const conversationId = message.receiverId;
       if (!this.conversations.has(conversationId)) {
         this.conversations.set(conversationId, []);
       }

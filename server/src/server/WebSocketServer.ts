@@ -5,6 +5,8 @@ import { WebSocketMessage, Client, WebSocketEvent } from "../types";
 import { logger } from "../utils/logger";
 import { messageHandler } from "../handlers/MessageHandler";
 import { userManager } from "../managers/UserManager";
+import { verifyToken } from "../middleware/auth";
+import { supabase } from "../db/supabase";
 
 class ChatWebSocketServer {
   private wss: WebSocketServer;
@@ -25,7 +27,7 @@ class ChatWebSocketServer {
     this.wss.on(
       "connection",
       (socket: WebSocket, req: http.IncomingMessage) => {
-        this.handleConnection(socket, req);
+        void this.handleConnection(socket, req);
       },
     );
 
@@ -43,12 +45,25 @@ class ChatWebSocketServer {
   /**
    * 处理客户端连接
    */
-  private handleConnection(socket: WebSocket, req: http.IncomingMessage): void {
-    // 从查询参数中获取token或userId（实际应用中应该进行更严格的身份验证）
+  private async handleConnection(
+    socket: WebSocket,
+    req: http.IncomingMessage,
+  ): Promise<void> {
     const url = new URL(req.url || "", `http://${req.headers.host}`);
-    const userId =
-      url.searchParams.get("userId") ||
-      `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const token = url.searchParams.get("token");
+
+    if (!token) {
+      socket.close(1008, "Unauthorized");
+      return;
+    }
+
+    let userId: string;
+    try {
+      userId = verifyToken(token);
+    } catch {
+      socket.close(1008, "Unauthorized");
+      return;
+    }
 
     // 创建临时客户端对象（等待正式登录）
     const client: Client = {
@@ -62,6 +77,27 @@ class ChatWebSocketServer {
     this.clients.set(socketId, client);
 
     logger.info(`Client connected: ${socketId}, User ID: ${userId}`);
+
+    const userResult = await supabase
+      .from("users")
+      .select("id, username, avatar_url")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (userResult.error || !userResult.data) {
+      socket.close(1008, "Unauthorized");
+      return;
+    }
+
+    userManager.addUser(socket, userId, {
+      id: userResult.data.id,
+      username: userResult.data.username,
+      nickname: userResult.data.username,
+      status: "online",
+      lastOnline: Date.now(),
+    });
+
+    userManager.notifyUserOnline(userId);
 
     // 处理客户端消息
     socket.on("message", (data: Buffer | string) => {
