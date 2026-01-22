@@ -1,13 +1,7 @@
-import { ref, onUnmounted, inject, provide } from "vue";
+import { ref, onUnmounted, inject } from "vue";
 import { WebSocketManager } from "../services/WebSocketManager";
 import { WebSocketEvent } from "../models/WebSocket";
-
-// 提供 WebSocketManager 实例
-export function provideWebSocketManager(url: string, token: string) {
-  const wsManager = new WebSocketManager(url, token);
-  provide("wsManager", wsManager);
-  return wsManager;
-}
+import type { WebSocketEventType } from "../models/WebSocket";
 
 // 注入 WebSocketManager 实例
 export function useWebSocket() {
@@ -15,7 +9,7 @@ export function useWebSocket() {
 
   if (!wsManager) {
     throw new Error(
-      "WebSocketManager not provided. Call provideWebSocketManager first.",
+      "WebSocketManager not provided. Ensure App.vue provides it via provide('wsManager', ...).",
     );
   }
 
@@ -42,10 +36,12 @@ export function useWebSocket() {
   return {
     wsManager,
     isConnected,
-    send: wsManager.send.bind(wsManager),
-    connect: wsManager.connect.bind(wsManager),
-    disconnect: wsManager.disconnect.bind(wsManager),
-    on: wsManager.events.on.bind(wsManager.events),
-    off: wsManager.events.off.bind(wsManager.events),
+    send: <T>(type: WebSocketEventType, data: T) => wsManager.send(type, data),
+    connect: () => wsManager.connect(),
+    disconnect: () => wsManager.disconnect(),
+    on: (event: WebSocketEventType, callback: (...args: any[]) => void) =>
+      wsManager.events.on(event, callback),
+    off: (event: WebSocketEventType, callback: (...args: any[]) => void) =>
+      wsManager.events.off(event, callback),
   };
 }

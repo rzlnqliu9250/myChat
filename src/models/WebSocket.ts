@@ -20,11 +20,3 @@ export interface WebSocketMessage {
   data: any;
   timestamp: number;
 }
-
-export interface HeartbeatMessage {
-  type: typeof WebSocketEvent.HEARTBEAT;
-  data: {
-    ping: number;
-  };
-  timestamp: number;
-}

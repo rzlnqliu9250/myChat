@@ -160,17 +160,15 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
+import { WebSocketEvent } from "../models/WebSocket";
 import type { Message } from "../models/Message";
 import MessageBubble from "../components/chat/MessageBubble.vue";
 import ChatInput from "../components/chat/ChatInput.vue";
+import { apiGet, apiPost } from "../services/api";
 
 const router = useRouter();
 const userStore = useUserStore();
 const { send, on, connect } = useWebSocket();
-
-const apiBase =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:8080" : "");
 
 const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
@@ -220,20 +218,14 @@ const fetchFriends = async () => {
     return;
   }
 
-  const resp = await fetch(`${apiBase}/api/friends`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!resp.ok) {
-    const err = (await resp.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(err?.error || "加载好友失败");
+  let data: { friends: ApiFriend[] };
+  try {
+    data = await apiGet<{ friends: ApiFriend[] }>("/api/friends", token);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    throw new Error(msg && msg !== "请求失败" ? msg : "加载好友失败");
   }
 
-  const data = (await resp.json()) as { friends: ApiFriend[] };
   friends.value = (data.friends || []).map((f) => ({
     ...f,
     status: f.online ? ("online" as const) : ("offline" as const),
@@ -256,20 +248,7 @@ const fetchMessages = async (friendId: string) => {
     return;
   }
 
-  const resp = await fetch(`${apiBase}/api/messages/${friendId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!resp.ok) {
-    const err = (await resp.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(err?.error || "加载聊天记录失败");
-  }
-
-  const data = (await resp.json()) as {
+  let data: {
     messages: {
       id: string;
       senderId: string;
@@ -279,6 +258,13 @@ const fetchMessages = async (friendId: string) => {
       createdAt: string;
     }[];
   };
+
+  try {
+    data = await apiGet<typeof data>(`/api/messages/${friendId}`, token);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    throw new Error(msg && msg !== "请求失败" ? msg : "加载聊天记录失败");
+  }
 
   messages.value = (data.messages || []).map((m) => {
     const ts = new Date(m.createdAt).getTime();
@@ -301,20 +287,17 @@ const fetchIncomingRequests = async () => {
     return;
   }
 
-  const resp = await fetch(`${apiBase}/api/friends/requests`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!resp.ok) {
-    const err = (await resp.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(err?.error || "加载好友申请失败");
+  let data: { requests: IncomingRequest[] };
+  try {
+    data = await apiGet<{ requests: IncomingRequest[] }>(
+      "/api/friends/requests",
+      token,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    throw new Error(msg && msg !== "请求失败" ? msg : "加载好友申请失败");
   }
 
-  const data = (await resp.json()) as { requests: IncomingRequest[] };
   incomingRequests.value = data.requests || [];
 };
 
@@ -329,28 +312,19 @@ const sendFriendRequest = async () => {
   friendRequestSuccess.value = null;
 
   try {
-    const resp = await fetch(`${apiBase}/api/friends/request`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ username: friendRequestUsername.value }),
-    });
-
-    if (!resp.ok) {
-      const err = (await resp.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(err?.error || "发送好友申请失败");
-    }
+    await apiPost<unknown>(
+      "/api/friends/request",
+      { username: friendRequestUsername.value },
+      token,
+    );
 
     friendRequestSuccess.value = "已发送好友申请";
     friendRequestUsername.value = "";
     await fetchIncomingRequests();
   } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
     friendRequestError.value =
-      e instanceof Error ? e.message : "发送好友申请失败";
+      msg && msg !== "请求失败" ? msg : "发送好友申请失败";
   } finally {
     friendRequestLoading.value = false;
   }
@@ -364,26 +338,16 @@ const acceptRequest = async (requestId: string) => {
 
   requestActionLoadingIds.value.add(requestId);
   try {
-    const resp = await fetch(
-      `${apiBase}/api/friends/requests/${requestId}/accept`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
+    await apiPost<unknown>(
+      `/api/friends/requests/${requestId}/accept`,
+      undefined,
+      token,
     );
-
-    if (!resp.ok) {
-      const err = (await resp.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(err?.error || "同意失败");
-    }
 
     await Promise.all([fetchIncomingRequests(), fetchFriends()]);
   } catch (e) {
-    friendRequestError.value = e instanceof Error ? e.message : "同意失败";
+    const msg = e instanceof Error ? e.message : "";
+    friendRequestError.value = msg && msg !== "请求失败" ? msg : "同意失败";
   } finally {
     requestActionLoadingIds.value.delete(requestId);
   }
@@ -397,26 +361,16 @@ const rejectRequest = async (requestId: string) => {
 
   requestActionLoadingIds.value.add(requestId);
   try {
-    const resp = await fetch(
-      `${apiBase}/api/friends/requests/${requestId}/reject`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
+    await apiPost<unknown>(
+      `/api/friends/requests/${requestId}/reject`,
+      undefined,
+      token,
     );
-
-    if (!resp.ok) {
-      const err = (await resp.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(err?.error || "拒绝失败");
-    }
 
     await fetchIncomingRequests();
   } catch (e) {
-    friendRequestError.value = e instanceof Error ? e.message : "拒绝失败";
+    const msg = e instanceof Error ? e.message : "";
+    friendRequestError.value = msg && msg !== "请求失败" ? msg : "拒绝失败";
   } finally {
     requestActionLoadingIds.value.delete(requestId);
   }
@@ -463,7 +417,7 @@ const handleSendMessage = (content: string) => {
   messages.value.push(message);
 
   // 发送消息到服务器（实际应该通过WebSocket发送）
-  send("message_receive" as any, {
+  send(WebSocketEvent.MESSAGE_RECEIVE, {
     clientMessageId,
     content: content,
     receiverId: selectedFriend.value.id,
@@ -492,7 +446,7 @@ onMounted(() => {
   void fetchIncomingRequests().catch((e) => console.error(e));
 
   // 监听新消息
-  on("message_receive" as any, (message: any) => {
+  on(WebSocketEvent.MESSAGE_RECEIVE, (message: any) => {
     if (!message) {
       return;
     }

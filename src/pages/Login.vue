@@ -46,14 +46,11 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
+import { apiPost } from "../services/api";
 
 const router = useRouter();
 const userStore = useUserStore();
 const { connect, wsManager } = useWebSocket();
-
-const apiBase =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:8080" : "");
 
 const loading = ref(false);
 const form = ref({
@@ -64,28 +61,13 @@ const form = ref({
 const handleLogin = async () => {
   loading.value = true;
   try {
-    const loginResp = await fetch(`${apiBase}/api/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: form.value.username,
-        password: form.value.password,
-      }),
-    });
-
-    if (!loginResp.ok) {
-      const err = (await loginResp.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(err?.error || "登录失败");
-    }
-
-    const loginData = (await loginResp.json()) as {
+    const loginData = await apiPost<{
       token: string;
       user: { id: string; username: string; avatarUrl?: string | null };
-    };
+    }>("/api/login", {
+      username: form.value.username,
+      password: form.value.password,
+    });
 
     userStore.setCurrentUser({
       id: loginData.user.id,

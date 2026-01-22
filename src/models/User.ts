@@ -7,14 +7,3 @@ export interface User {
   status: "online" | "offline" | "busy" | "away";
   lastOnline?: number;
 }
-
-export interface UserCredentials {
-  username: string;
-  password: string;
-}
-
-export interface UserRegister {
-  username: string;
-  password: string;
-  nickname: string;
-}

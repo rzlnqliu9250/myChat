@@ -1,13 +1,4 @@
 // src/models/Message.ts
-export const MessageType = {
-  TEXT: "text",
-  IMAGE: "image",
-  FILE: "file",
-  SYSTEM: "system",
-} as const;
-
-export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
-
 export const MessageStatus = {
   SENDING: "sending",
   SENT: "sent",
@@ -24,7 +15,7 @@ export interface Message {
   senderId: string;
   receiverId: string;
   content: string;
-  type: MessageTypeValue;
+  type: "text" | "image" | "file" | "system";
   status: MessageStatusValue;
   createTime: number;
   updateTime: number;

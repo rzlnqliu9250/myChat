@@ -1,21 +1,19 @@
 import { WebSocketEvent } from "../models/WebSocket";
-import type {
-  WebSocketMessage,
-  HeartbeatMessage,
-  WebSocketEventType,
-} from "../models/WebSocket";
+import type { WebSocketMessage, WebSocketEventType } from "../models/WebSocket";
+
+type Listener = (...args: any[]) => void;
 
 class EventEmitter {
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners: Map<WebSocketEventType, Listener[]> = new Map();
 
-  on(event: string, callback: Function) {
+  on(event: WebSocketEventType, callback: Listener) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)?.push(callback);
   }
 
-  off(event: string, callback: Function) {
+  off(event: WebSocketEventType, callback: Listener) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       this.listeners.set(
@@ -25,7 +23,7 @@ class EventEmitter {
     }
   }
 
-  emit(event: string, ...args: any[]) {
+  emit(event: WebSocketEventType, ...args: any[]) {
     const callbacks = this.listeners.get(event);
     callbacks?.forEach((callback) => callback(...args));
   }
@@ -194,13 +192,8 @@ export class WebSocketManager {
 
     this.heartbeatInterval = window.setInterval(() => {
       if (this.isConnected) {
-        const heartbeatMessage: HeartbeatMessage = {
-          type: WebSocketEvent.HEARTBEAT,
-          data: { ping: Date.now() },
-          timestamp: Date.now(),
-        };
-
-        this.send(WebSocketEvent.HEARTBEAT, heartbeatMessage.data);
+        const data = { ping: Date.now() };
+        this.send(WebSocketEvent.HEARTBEAT, data);
       }
     }, this.heartbeatIntervalTime);
   }
