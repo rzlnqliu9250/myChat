@@ -2,9 +2,23 @@
 import { defineStore } from "pinia";
 import type { User } from "../models/User";
 
+function loadStoredUser(): User | null {
+  const raw = localStorage.getItem("currentUser");
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as User;
+  } catch {
+    localStorage.removeItem("currentUser");
+    return null;
+  }
+}
+
 export const useUserStore = defineStore("user", {
   state: () => ({
-    currentUser: null as User | null,
+    currentUser: loadStoredUser(),
     token: localStorage.getItem("token") || null,
     friends: [] as User[],
     onlineUsers: new Set<string>(),
@@ -20,6 +34,7 @@ export const useUserStore = defineStore("user", {
   actions: {
     setCurrentUser(user: User) {
       this.currentUser = user;
+      localStorage.setItem("currentUser", JSON.stringify(user));
     },
 
     setToken(token: string) {
@@ -34,6 +49,7 @@ export const useUserStore = defineStore("user", {
 
     logout() {
       this.currentUser = null;
+      localStorage.removeItem("currentUser");
       this.clearToken();
       this.friends = [];
       this.onlineUsers.clear();

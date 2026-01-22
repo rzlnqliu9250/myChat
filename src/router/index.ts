@@ -38,6 +38,11 @@ router.beforeEach((to, _, next) => {
   const requiresAuth = to.meta.requiresAuth;
   const isLoggedIn = userStore.isLoggedIn;
 
+  if (to.path === "/") {
+    next(isLoggedIn ? "/chat" : "/login");
+    return;
+  }
+
   if (requiresAuth && !isLoggedIn) {
     next("/login");
   } else {

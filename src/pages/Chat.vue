@@ -480,7 +480,7 @@ const handleLogout = () => {
 // 组件挂载时的初始化
 onMounted(() => {
   // 如果未登录，跳转到登录页
-  if (!currentUser.value) {
+  if (!userStore.token) {
     router.push("/login");
     return;
   }
@@ -556,14 +556,14 @@ onMounted(() => {
 .sidebar {
   width: 300px;
   background-color: white;
-  border-right: 1px solid #e0e0e0;
+  /* border-right: 1px solid #e0e0e0; */
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-header {
   padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -624,11 +624,11 @@ onMounted(() => {
 /* 搜索框样式 */
 .search-box {
   padding: 15px;
-  border-bottom: 1px solid #e0e0e0;
+  /* border-bottom: 1px solid #e0e0e0; */
 }
 
 .search-input {
-  width: 100%;
+  width: 90%;
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 20px;
@@ -643,7 +643,7 @@ onMounted(() => {
 
 .friend-actions {
   padding: 12px 15px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: none;
 }
 
 .friend-actions-title {
