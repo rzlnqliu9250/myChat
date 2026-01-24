@@ -1,3 +1,6 @@
+/**
+ * WebSocket 组合式函数：从 Vue 的 provide/inject 获取 WebSocketManager，并提供 connect/send/on 等便捷方法。
+ */
 import { ref, onUnmounted, inject } from "vue";
 import { WebSocketManager } from "../services/WebSocketManager";
 import { WebSocketEvent } from "../models/WebSocket";

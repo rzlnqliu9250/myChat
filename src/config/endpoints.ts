@@ -1,3 +1,6 @@
+/**
+ * 环境配置：统一管理前端请求的 API Base URL 与 WebSocket URL。
+ */
 export const apiBase =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? "http://localhost:8080" : "");

@@ -1,3 +1,6 @@
+/**
+ * 用户状态仓库（Pinia）：管理当前用户、token、本地持久化、好友列表与在线用户集合。
+ */
 // src/stores/userStore.ts
 import { defineStore } from "pinia";
 import type { User } from "../models/User";

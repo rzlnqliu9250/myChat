@@ -1,3 +1,6 @@
+/**
+ * WebSocket 管理器：封装连接生命周期、心跳、自动重连，以及基于事件的消息分发。
+ */
 import { WebSocketEvent } from "../models/WebSocket";
 import type { WebSocketMessage, WebSocketEventType } from "../models/WebSocket";
 

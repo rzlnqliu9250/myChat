@@ -99,15 +99,26 @@ const handleRegister = async () => {
   loading.value = true;
   try {
     await apiPost<{
-      user: { id: string; username: string; avatarUrl?: string | null };
+      user: {
+        id: string;
+        username: string;
+        nickname: string;
+        avatarUrl?: string | null;
+      };
     }>("/api/register", {
       username: form.value.username,
+      nickname: form.value.nickname,
       password: form.value.password,
     });
 
     const loginData = await apiPost<{
       token: string;
-      user: { id: string; username: string; avatarUrl?: string | null };
+      user: {
+        id: string;
+        username: string;
+        nickname: string;
+        avatarUrl?: string | null;
+      };
     }>("/api/login", {
       username: form.value.username,
       password: form.value.password,
@@ -116,7 +127,7 @@ const handleRegister = async () => {
     userStore.setCurrentUser({
       id: loginData.user.id,
       username: loginData.user.username,
-      nickname: form.value.nickname || loginData.user.username,
+      nickname: loginData.user.nickname || loginData.user.username,
       avatar: loginData.user.avatarUrl || undefined,
       status: "online" as const,
       lastOnline: Date.now(),

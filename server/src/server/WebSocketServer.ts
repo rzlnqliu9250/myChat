@@ -1,3 +1,6 @@
+/**
+ * WebSocket 服务端：处理客户端连接/断开、鉴权、消息转发与在线状态通知。
+ */
 // src/server/WebSocketServer.ts
 import { WebSocket, WebSocketServer } from "ws";
 import http from "http";
@@ -78,7 +81,7 @@ class ChatWebSocketServer {
 
         const userResult = await supabase
             .from("users")
-            .select("id, username, avatar_url")
+            .select("id, username, nickname, avatar_url")
             .eq("id", userId)
             .maybeSingle();
 
@@ -92,7 +95,7 @@ class ChatWebSocketServer {
         userManager.addUser(socket, userId, {
             id: userResult.data.id,
             username: userResult.data.username,
-            nickname: userResult.data.username,
+            nickname: userResult.data.nickname ?? userResult.data.username,
             status: "online",
             lastOnline: Date.now(),
         });

@@ -1,3 +1,6 @@
+/**
+ * 消息模型：定义聊天消息的数据结构与状态枚举（发送中/已发送/已送达/已读/失败）。
+ */
 // src/models/Message.ts
 export const MessageStatus = {
   SENDING: "sending",

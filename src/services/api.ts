@@ -1,3 +1,6 @@
+/**
+ * HTTP 请求封装：统一处理 baseURL、请求头（含 token）、错误解析与 JSON 解析。
+ */
 import { apiBase } from "../config/endpoints";
 
 type ApiErrorBody = {

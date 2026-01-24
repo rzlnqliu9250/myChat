@@ -63,7 +63,12 @@ const handleLogin = async () => {
   try {
     const loginData = await apiPost<{
       token: string;
-      user: { id: string; username: string; avatarUrl?: string | null };
+      user: {
+        id: string;
+        username: string;
+        nickname: string;
+        avatarUrl?: string | null;
+      };
     }>("/api/login", {
       username: form.value.username,
       password: form.value.password,
@@ -72,7 +77,7 @@ const handleLogin = async () => {
     userStore.setCurrentUser({
       id: loginData.user.id,
       username: loginData.user.username,
-      nickname: loginData.user.username,
+      nickname: loginData.user.nickname || loginData.user.username,
       avatar: loginData.user.avatarUrl || undefined,
       status: "online" as const,
       lastOnline: Date.now(),

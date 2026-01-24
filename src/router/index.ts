@@ -1,3 +1,6 @@
+/**
+ * 路由配置：定义页面路由，并通过路由守卫控制登录态访问。
+ */
 import { createRouter, createWebHistory } from "vue-router";
 import Login from "../pages/Login.vue";
 import Register from "../pages/Register.vue";

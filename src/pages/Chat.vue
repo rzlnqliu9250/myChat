@@ -5,10 +5,14 @@
       <div class="sidebar-header">
         <div class="user-info">
           <div class="user-avatar">
-            {{ currentUser?.nickname?.charAt(0) || "U" }}
+            {{
+              (currentUser?.nickname || currentUser?.username || "U").charAt(0)
+            }}
           </div>
           <div class="user-details">
-            <h3 class="user-name">{{ currentUser?.nickname || "未登录" }}</h3>
+            <h3 class="user-name">
+              {{ currentUser?.nickname || currentUser?.username || "未登录" }}
+            </h3>
             <span class="user-status">{{
               currentUser?.status || "offline"
             }}</span>
@@ -96,9 +100,13 @@
           :class="{ active: selectedFriend?.id === friend.id }"
           @click="selectFriend(friend)"
         >
-          <div class="friend-avatar">{{ friend.nickname.charAt(0) }}</div>
+          <div class="friend-avatar">
+            {{ (friend.nickname || friend.username).charAt(0) }}
+          </div>
           <div class="friend-info">
-            <div class="friend-name">{{ friend.nickname }}</div>
+            <div class="friend-name">
+              {{ friend.nickname || friend.username }}
+            </div>
             <div class="friend-status">
               <span class="status-indicator" :class="friend.status"></span>
               {{ friend.status }}
@@ -121,10 +129,14 @@
         <header class="chat-header">
           <div class="chat-header-info">
             <div class="friend-avatar">
-              {{ selectedFriend.nickname.charAt(0) }}
+              {{
+                (selectedFriend.nickname || selectedFriend.username).charAt(0)
+              }}
             </div>
             <div>
-              <h3 class="friend-name">{{ selectedFriend.nickname }}</h3>
+              <h3 class="friend-name">
+                {{ selectedFriend.nickname || selectedFriend.username }}
+              </h3>
               <span class="friend-status">
                 <span
                   class="status-indicator"
@@ -383,8 +395,12 @@ const filteredFriends = computed(() => {
   }
   return friends.value.filter(
     (friend) =>
-      friend.nickname.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      friend.username.toLowerCase().includes(searchQuery.value.toLowerCase()),
+      (friend.nickname || "")
+        .toLowerCase()
+        .includes(searchQuery.value.toLowerCase()) ||
+      (friend.username || "")
+        .toLowerCase()
+        .includes(searchQuery.value.toLowerCase()),
   );
 });
 
@@ -444,6 +460,25 @@ onMounted(() => {
 
   void fetchFriends().catch((e) => console.error(e));
   void fetchIncomingRequests().catch((e) => console.error(e));
+
+  on(WebSocketEvent.FRIEND_REQUEST_CREATED, () => {
+    void fetchIncomingRequests().catch((e) => console.error(e));
+  });
+
+  on(WebSocketEvent.FRIEND_REQUEST_ACCEPTED, () => {
+    void Promise.all([fetchFriends(), fetchIncomingRequests()]).catch((e) =>
+      console.error(e),
+    );
+  });
+
+  on(WebSocketEvent.FRIEND_REQUEST_REJECTED, () => {
+    friendRequestError.value = "好友申请被对方拒绝";
+    window.setTimeout(() => {
+      if (friendRequestError.value === "好友申请被对方拒绝") {
+        friendRequestError.value = null;
+      }
+    }, 3000);
+  });
 
   // 监听新消息
   on(WebSocketEvent.MESSAGE_RECEIVE, (message: any) => {
