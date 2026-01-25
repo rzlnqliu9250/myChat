@@ -149,7 +149,7 @@
         </header>
 
         <!-- 聊天消息区域 -->
-        <div class="chat-messages">
+        <div class="chat-messages" ref="messagesContainer">
           <message-bubble
             v-for="message in messages"
             :key="message.id"
@@ -168,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
@@ -185,6 +185,23 @@ const { send, on, connect } = useWebSocket();
 const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
 const messages = ref<Message[]>([]);
+const messagesContainer = ref<HTMLElement | null>(null);
+
+const scrollMessagesToBottom = async (
+  behavior: ScrollBehavior = "auto",
+): Promise<void> => {
+  await nextTick();
+  const el = messagesContainer.value;
+  if (!el) {
+    return;
+  }
+
+  try {
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  } catch {
+    el.scrollTop = el.scrollHeight;
+  }
+};
 
 // ... rest of the code remains the same ...
 // 当前登录用户
@@ -291,6 +308,8 @@ const fetchMessages = async (friendId: string) => {
       updateTime: ts,
     } satisfies Message;
   });
+
+  void scrollMessagesToBottom();
 };
 
 const fetchIncomingRequests = async () => {
@@ -431,6 +450,7 @@ const handleSendMessage = (content: string) => {
 
   // 添加到本地消息列表
   messages.value.push(message);
+  void scrollMessagesToBottom("smooth");
 
   // 发送消息到服务器（实际应该通过WebSocket发送）
   send(WebSocketEvent.MESSAGE_RECEIVE, {
@@ -528,6 +548,7 @@ onMounted(() => {
         createTime: message.createTime || Date.now(),
         updateTime: message.updateTime || Date.now(),
       });
+      void scrollMessagesToBottom("smooth");
     }
   });
 });
@@ -807,6 +828,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   background-color: #f5f5f5;
+  min-height: 0;
 }
 
 .no-selection {
@@ -830,6 +852,8 @@ onMounted(() => {
   border-radius: 8px;
   margin: 10px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -838,6 +862,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: white;
 }
 
 .chat-header-info {
@@ -854,6 +882,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 /* 聊天输入区域 */
@@ -861,6 +890,9 @@ onMounted(() => {
   padding: 20px;
   border-top: 1px solid #e0e0e0;
   background-color: #fafafa;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 .input-wrapper {

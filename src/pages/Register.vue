@@ -57,9 +57,10 @@
         <button
           type="submit"
           class="register-button"
+          :class="{ loading }"
           :disabled="loading || form.password !== form.confirmPassword"
         >
-          {{ loading ? "注册中..." : "注册" }}
+          注册
         </button>
         <div class="form-footer">
           <p>
@@ -218,6 +219,32 @@ const handleRegister = async () => {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.3s;
+  position: relative;
+}
+
+.register-button.loading::first-line {
+  color: transparent;
+}
+
+.register-button.loading::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(255, 255, 255, 1);
+  animation: registerButtonSpin 0.8s linear infinite;
+}
+
+@keyframes registerButtonSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .register-button:hover:not(:disabled) {

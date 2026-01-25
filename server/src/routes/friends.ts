@@ -9,6 +9,8 @@ import { WebSocketEvent, type WebSocketMessage } from "../types";
 
 export const friendsRouter = Router();
 
+//发送 WS 的工具函数
+//调用 userManager.sendMessageToUser(userId, message) 发送给指定用户
 function notifyUser(userId: string, type: WebSocketEvent, data: any): void {
     const message: WebSocketMessage = {
         type,
@@ -140,6 +142,7 @@ friendsRouter.post("/friends/request", requireAuth, async (req, res, next) => {
             return;
         }
 
+        //数据库写入 pending 后给 被申请方推送 FRIEND_REQUEST_CREATED
         notifyUser(friendId, WebSocketEvent.FRIEND_REQUEST_CREATED, {
             requestId: created.data.id,
         });
@@ -264,6 +267,7 @@ friendsRouter.post(
                 return;
             }
 
+            //数据库改为 accepted 后给双方推送 FRIEND_REQUEST_ACCEPTED
             notifyUser(
                 updated.data.user_id,
                 WebSocketEvent.FRIEND_REQUEST_ACCEPTED,
@@ -328,6 +332,8 @@ friendsRouter.post(
                 return;
             }
 
+            //数据库删除/更新后给申请方推送 FRIEND_REQUEST_REJECTED
+            //目的：让申请方能实时收到“被拒绝”的反馈
             notifyUser(
                 request.data.user_id,
                 WebSocketEvent.FRIEND_REQUEST_REJECTED,

@@ -25,8 +25,13 @@
             required
           />
         </div>
-        <button type="submit" class="login-button" :disabled="loading">
-          {{ loading ? "登录中..." : "登录" }}
+        <button
+          type="submit"
+          class="login-button"
+          :class="{ loading }"
+          :disabled="loading"
+        >
+          登录
         </button>
         <div class="form-footer">
           <p>
@@ -168,6 +173,32 @@ const handleLogin = async () => {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.3s;
+  position: relative;
+}
+
+.login-button.loading::first-line {
+  color: transparent;
+}
+
+.login-button.loading::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(255, 255, 255, 1);
+  animation: loginButtonSpin 0.8s linear infinite;
+}
+
+@keyframes loginButtonSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .login-button:hover:not(:disabled) {
