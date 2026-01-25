@@ -16,6 +16,7 @@ export enum WebSocketEvent {
     FRIEND_REQUEST_CREATED = "friend_request_created", //好友申请创建
     FRIEND_REQUEST_ACCEPTED = "friend_request_accepted", //好友申请同意
     FRIEND_REQUEST_REJECTED = "friend_request_rejected", //好友申请拒绝
+    FRIEND_REMOVED = "friend_removed", //删除好友
 }
 
 //服务端和客户端所有 WS 消息都长这样

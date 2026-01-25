@@ -72,3 +72,7 @@ export function apiPost<T>(
 export function apiGet<T>(path: string, token?: string | null): Promise<T> {
   return apiRequest<T>(path, { method: "GET" }, token);
 }
+
+export function apiDelete<T>(path: string, token?: string | null): Promise<T> {
+  return apiRequest<T>(path, { method: "DELETE" }, token);
+}

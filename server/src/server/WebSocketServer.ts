@@ -1,5 +1,6 @@
 /**
- * WebSocket 服务端：处理客户端连接/断开、鉴权、消息转发与在线状态通知。
+ * WebSocket 服务端：把 HTTP 服务器上的 WebSocket 连接“接进来”，
+ * 完成鉴权、登记在线用户、把客户端消息交给 MessageHandler 处理，并在断开时广播离线。
  */
 // src/server/WebSocketServer.ts
 import { WebSocket, WebSocketServer } from "ws";
@@ -15,6 +16,7 @@ class ChatWebSocketServer {
     private wss: WebSocketServer;
     private server: http.Server;
 
+    //构造器
     constructor(server: http.Server) {
         this.server = server;
         this.wss = new WebSocketServer({ server });

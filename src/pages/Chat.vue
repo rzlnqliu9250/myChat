@@ -112,6 +112,12 @@
               {{ friend.status }}
             </div>
           </div>
+          <button
+            class="friend-delete-button"
+            @click.stop="handleDeleteFriend(friend)"
+          >
+            删除
+          </button>
         </div>
       </div>
     </aside>
@@ -176,7 +182,7 @@ import { WebSocketEvent } from "../models/WebSocket";
 import type { Message } from "../models/Message";
 import MessageBubble from "../components/chat/MessageBubble.vue";
 import ChatInput from "../components/chat/ChatInput.vue";
-import { apiGet, apiPost } from "../services/api";
+import { apiDelete, apiGet, apiPost } from "../services/api";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -200,6 +206,33 @@ const scrollMessagesToBottom = async (
     el.scrollTo({ top: el.scrollHeight, behavior });
   } catch {
     el.scrollTop = el.scrollHeight;
+  }
+};
+
+const handleDeleteFriend = async (friend: UiFriend) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const name = friend.nickname || friend.username;
+  const confirmed = window.confirm(`确定删除好友「${name}」吗？`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await apiDelete<{ success: boolean }>(`/api/friends/${friend.id}`, token);
+
+    if (selectedFriend.value?.id === friend.id) {
+      selectedFriend.value = null;
+      messages.value = [];
+    }
+
+    await fetchFriends();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    friendRequestError.value = msg && msg !== "请求失败" ? msg : "删除好友失败";
   }
 };
 
@@ -500,6 +533,30 @@ onMounted(() => {
     }, 3000);
   });
 
+  on(
+    WebSocketEvent.FRIEND_REMOVED,
+    (data: { userId?: string; friendId?: string } | undefined) => {
+      const myId = currentUser.value?.id;
+      const removedA = data?.userId;
+      const removedB = data?.friendId;
+
+      if (
+        selectedFriend.value?.id &&
+        (selectedFriend.value.id === removedA ||
+          selectedFriend.value.id === removedB)
+      ) {
+        selectedFriend.value = null;
+        messages.value = [];
+      }
+
+      void fetchFriends().catch((e) => console.error(e));
+
+      if (myId && (myId === removedA || myId === removedB)) {
+        void fetchIncomingRequests().catch((e) => console.error(e));
+      }
+    },
+  );
+
   // 监听新消息
   on(WebSocketEvent.MESSAGE_RECEIVE, (message: any) => {
     if (!message) {
@@ -618,7 +675,7 @@ onMounted(() => {
 
 .logout-button {
   padding: 6px 12px;
-  background-color: #ff5252;
+  background-color: rgb(239, 148, 158);
   color: white;
   border: none;
   border-radius: 4px;
@@ -784,6 +841,20 @@ onMounted(() => {
   cursor: pointer;
   transition: background-color 0.2s;
   margin-bottom: 8px;
+}
+
+.friend-delete-button {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background-color: rgb(239, 148, 158);
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.friend-delete-button:hover {
+  background-color: #ff1744;
 }
 
 .friend-item:hover {

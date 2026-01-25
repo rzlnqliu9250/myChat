@@ -293,7 +293,7 @@ friendsRouter.post(
         }
     },
 );
-//拒绝申请
+
 friendsRouter.post(
     "/friends/requests/:requestId/reject",
     requireAuth,
@@ -322,7 +322,7 @@ friendsRouter.post(
                 res.status(403).json({ error: "forbidden" });
                 return;
             }
-            //删除这条申请记录
+
             const deleted = await supabase
                 .from("friendships")
                 .delete()
@@ -332,8 +332,6 @@ friendsRouter.post(
                 return;
             }
 
-            //数据库删除/更新后给申请方推送 FRIEND_REQUEST_REJECTED
-            //目的：让申请方能实时收到“被拒绝”的反馈
             notifyUser(
                 request.data.user_id,
                 WebSocketEvent.FRIEND_REQUEST_REJECTED,
@@ -343,6 +341,58 @@ friendsRouter.post(
                     friendId: request.data.friend_id,
                 },
             );
+
+            res.json({ success: true });
+        } catch (err) {
+            next(err);
+        }
+    },
+);
+
+friendsRouter.delete(
+    "/friends/:friendId",
+    requireAuth,
+    async (req, res, next) => {
+        try {
+            const userId = req.userId;
+            const friendId = req.params.friendId;
+
+            if (!userId) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
+
+            if (!friendId) {
+                res.status(400).json({ error: "friendId is required" });
+                return;
+            }
+
+            if (friendId === userId) {
+                res.status(400).json({ error: "不能删除自己" });
+                return;
+            }
+
+            const deleted = await supabase
+                .from("friendships")
+                .delete()
+                .or(
+                    `and(user_id.eq.${userId},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${userId})`,
+                )
+                .eq("status", "accepted");
+
+            if (deleted.error) {
+                next(deleted.error);
+                return;
+            }
+
+            notifyUser(friendId, WebSocketEvent.FRIEND_REMOVED, {
+                userId,
+                friendId,
+            });
+            notifyUser(userId, WebSocketEvent.FRIEND_REMOVED, {
+                userId,
+                friendId,
+            });
 
             res.json({ success: true });
         } catch (err) {
