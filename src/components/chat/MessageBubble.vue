@@ -1,10 +1,31 @@
 <template>
   <div
     class="message-bubble"
-    :class="{ sent: message.senderId === currentUserId }"
+    :class="{
+      sent: message.senderId === currentUserId,
+      received: message.senderId !== currentUserId,
+    }"
   >
-    <div class="message-content">
-      {{ message.content }}
+    <div
+      class="message-content"
+      :class="{
+        'has-media': message.type === 'image' || message.type === 'video',
+      }"
+    >
+      <img
+        v-if="message.type === 'image' && message.mediaUrl"
+        class="message-media message-image"
+        :src="message.mediaUrl"
+        alt="image"
+      />
+      <video
+        v-else-if="message.type === 'video' && message.mediaUrl"
+        class="message-media message-video"
+        :src="message.mediaUrl"
+        controls
+        preload="metadata"
+      ></video>
+      <span v-else>{{ message.content }}</span>
     </div>
     <div class="message-meta">
       <span class="message-time">{{ formatTime(message.createTime) }}</span>
@@ -76,16 +97,43 @@ const getStatusText = (status: string) => {
   word-wrap: break-word;
 }
 
+.message-content.has-media {
+  padding: 4px;
+  background-color: transparent;
+}
+
+.message-media {
+  display: block;
+  max-width: 260px;
+  max-height: 260px;
+  border-radius: 12px;
+}
+
+.message-video {
+  max-width: 320px;
+  max-height: 320px;
+}
+
 .message-bubble.sent .message-content {
   background-color: #646cff;
   color: white;
   border-bottom-right-radius: 4px;
 }
 
+.message-bubble.sent .message-content.has-media {
+  background-color: transparent;
+  color: inherit;
+}
+
 .message-bubble.received .message-content {
   background-color: #f0f0f0;
   color: #333;
   border-bottom-left-radius: 4px;
+}
+
+.message-bubble.received .message-content.has-media {
+  background-color: transparent;
+  color: inherit;
 }
 
 .message-meta {

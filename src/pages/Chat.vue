@@ -4,10 +4,27 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <div class="user-info">
-          <div class="user-avatar">
-            {{
-              (currentUser?.nickname || currentUser?.username || "U").charAt(0)
-            }}
+          <input
+            ref="avatarInput"
+            type="file"
+            accept="image/*"
+            style="display: none"
+            @change="handleAvatarFileChange"
+          />
+          <div class="user-avatar" @click="triggerAvatarPick">
+            <img
+              v-if="currentUser?.avatar"
+              class="avatar-image"
+              :src="currentUser.avatar"
+              alt="avatar"
+            />
+            <span v-else>
+              {{
+                (currentUser?.nickname || currentUser?.username || "U").charAt(
+                  0,
+                )
+              }}
+            </span>
           </div>
           <div class="user-details">
             <h3 class="user-name">
@@ -101,7 +118,15 @@
           @click="selectFriend(friend)"
         >
           <div class="friend-avatar">
-            {{ (friend.nickname || friend.username).charAt(0) }}
+            <img
+              v-if="friend.avatarUrl"
+              class="avatar-image"
+              :src="friend.avatarUrl"
+              alt="avatar"
+            />
+            <span v-else>{{
+              (friend.nickname || friend.username).charAt(0)
+            }}</span>
           </div>
           <div class="friend-info">
             <div class="friend-name">
@@ -137,9 +162,19 @@
           <header class="chat-header">
             <div class="chat-header-info">
               <div class="friend-avatar">
-                {{
-                  (selectedFriend.nickname || selectedFriend.username).charAt(0)
-                }}
+                <img
+                  v-if="selectedFriend.avatarUrl"
+                  class="avatar-image"
+                  :src="selectedFriend.avatarUrl"
+                  alt="avatar"
+                />
+                <span v-else>
+                  {{
+                    (selectedFriend.nickname || selectedFriend.username).charAt(
+                      0,
+                    )
+                  }}
+                </span>
               </div>
               <div>
                 <h3 class="friend-name">
@@ -168,7 +203,10 @@
 
           <!-- 聊天输入区域 -->
           <footer class="chat-input-area">
-            <chat-input @send="handleSendMessage" />
+            <chat-input
+              @send="handleSendMessage"
+              @sendMedia="handleSendMedia"
+            />
           </footer>
         </div>
       </transition>
@@ -185,7 +223,7 @@ import { WebSocketEvent } from "../models/WebSocket";
 import type { Message } from "../models/Message";
 import MessageBubble from "../components/chat/MessageBubble.vue";
 import ChatInput from "../components/chat/ChatInput.vue";
-import { apiDelete, apiGet, apiPost } from "../services/api";
+import { apiDelete, apiGet, apiPost, apiRequest } from "../services/api";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -195,6 +233,7 @@ const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
 const messages = ref<Message[]>([]);
 const messagesContainer = ref<HTMLElement | null>(null);
+const avatarInput = ref<HTMLInputElement | null>(null);
 
 const unreadCounts = ref<Record<string, number>>({});
 
@@ -203,6 +242,65 @@ const incrementUnread = (friendId: string): void => {
     ...unreadCounts.value,
     [friendId]: (unreadCounts.value[friendId] || 0) + 1,
   };
+};
+
+const triggerAvatarPick = (): void => {
+  if (!userStore.token) {
+    return;
+  }
+  avatarInput.value?.click();
+};
+
+const handleAvatarFileChange = async (e: Event): Promise<void> => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return;
+  }
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    const resp = await apiRequest<{ url: string }>(
+      "/api/upload/avatar",
+      {
+        method: "POST",
+        body: form,
+      },
+      token,
+    );
+
+    if (userStore.currentUser) {
+      userStore.setCurrentUser({
+        ...userStore.currentUser,
+        avatar: resp.url,
+      });
+    }
+  } catch (err) {
+    console.error(err);
+  } finally {
+    try {
+      if (input) {
+        input.value = "";
+      }
+    } catch {
+      // ignore
+    }
+  }
 };
 
 const clearUnread = (friendId: string): void => {
@@ -384,6 +482,10 @@ const fetchMessages = async (friendId: string) => {
       senderId: string;
       receiverId: string;
       content: string;
+      type?: string;
+      mediaUrl?: string | null;
+      mediaMime?: string | null;
+      mediaSize?: number | null;
       isRead: boolean;
       createdAt: string;
     }[];
@@ -403,7 +505,10 @@ const fetchMessages = async (friendId: string) => {
       senderId: m.senderId,
       receiverId: m.receiverId,
       content: m.content,
-      type: "text" as const,
+      type: ((m.type as any) || "text") as any,
+      mediaUrl: m.mediaUrl ?? null,
+      mediaMime: m.mediaMime ?? null,
+      mediaSize: m.mediaSize ?? null,
       status: m.isRead ? ("read" as const) : ("delivered" as const),
       createTime: ts,
       updateTime: ts,
@@ -565,6 +670,107 @@ const handleSendMessage = (content: string) => {
   });
 };
 
+const handleSendMedia = async (file: File) => {
+  if (!selectedFriend.value || !currentUser.value) {
+    return;
+  }
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    return;
+  }
+
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) {
+    return;
+  }
+
+  const msgType = isImage ? ("image" as const) : ("video" as const);
+  const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const previewUrl = URL.createObjectURL(file);
+
+  const localMsg: Message = {
+    id: clientMessageId,
+    senderId: currentUser.value.id,
+    receiverId: selectedFriend.value.id,
+    content: "",
+    type: msgType,
+    mediaUrl: previewUrl,
+    mediaMime: file.type,
+    mediaSize: file.size,
+    status: "sending" as const,
+    createTime: Date.now(),
+    updateTime: Date.now(),
+  };
+
+  messages.value.push(localMsg);
+  void scrollMessagesToBottom("smooth");
+
+  const form = new FormData();
+  form.append("file", file);
+
+  try {
+    const uploadResp = await apiRequest<{
+      url: string;
+      mime: string;
+      size: number;
+    }>(
+      "/api/upload/chat-media",
+      {
+        method: "POST",
+        body: form,
+      },
+      token,
+    );
+
+    try {
+      URL.revokeObjectURL(previewUrl);
+    } catch {
+      // ignore
+    }
+
+    const idx = messages.value.findIndex((m) => m.id === clientMessageId);
+    if (idx >= 0) {
+      const existing = messages.value[idx];
+      if (existing) {
+        messages.value[idx] = {
+          ...existing,
+          mediaUrl: uploadResp.url,
+          mediaMime: uploadResp.mime,
+          mediaSize: uploadResp.size,
+        };
+      }
+    }
+
+    send(WebSocketEvent.MESSAGE_RECEIVE, {
+      clientMessageId,
+      receiverId: selectedFriend.value.id,
+      content: "",
+      type: msgType,
+      mediaUrl: uploadResp.url,
+      mediaMime: uploadResp.mime,
+      mediaSize: uploadResp.size,
+    });
+  } catch (err) {
+    const idx = messages.value.findIndex((m) => m.id === clientMessageId);
+    if (idx >= 0) {
+      const existing = messages.value[idx];
+      if (existing) {
+        messages.value[idx] = {
+          ...existing,
+          status: "failed" as const,
+          updateTime: Date.now(),
+        };
+      }
+    }
+    console.error(err);
+  }
+};
+
 // 退出登录
 const handleLogout = () => {
   userStore.logout();
@@ -658,6 +864,23 @@ onMounted(() => {
         messages.value[idx] = {
           ...existing,
           id: String(message.id),
+          content:
+            typeof message.content === "string"
+              ? message.content
+              : existing.content,
+          type: (message.type || existing.type) as any,
+          mediaUrl:
+            message.mediaUrl !== undefined
+              ? message.mediaUrl
+              : existing.mediaUrl,
+          mediaMime:
+            message.mediaMime !== undefined
+              ? message.mediaMime
+              : existing.mediaMime,
+          mediaSize:
+            message.mediaSize !== undefined
+              ? message.mediaSize
+              : existing.mediaSize,
           status: message.status || existing.status,
           updateTime: message.updateTime || Date.now(),
         };
@@ -679,6 +902,9 @@ onMounted(() => {
         receiverId: message.receiverId,
         content: message.content,
         type: (message.type || "text") as any,
+        mediaUrl: message.mediaUrl ?? null,
+        mediaMime: message.mediaMime ?? null,
+        mediaSize: message.mediaSize ?? null,
         status: (message.status || "delivered") as any,
         createTime: message.createTime || Date.now(),
         updateTime: message.updateTime || Date.now(),
@@ -696,7 +922,13 @@ onMounted(() => {
       if (!isCurrentConversation) {
         incrementUnread(incomingFriendId);
       }
-      maybeNotifyDesktop(incomingFriendId, String(message.content || ""));
+      const preview =
+        message.type === "image"
+          ? "[图片]"
+          : message.type === "video"
+            ? "[视频]"
+            : String(message.content || "");
+      maybeNotifyDesktop(incomingFriendId, preview);
     }
   });
 });
@@ -745,6 +977,17 @@ onMounted(() => {
   align-items: center;
   font-weight: bold;
   font-size: 16px;
+}
+
+.user-avatar {
+  cursor: pointer;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .user-details {

@@ -7,12 +7,42 @@
       <h1 class="register-title">注册</h1>
       <form @submit.prevent="handleRegister" class="register-form">
         <div class="form-group">
-          <label for="username" class="form-label">用户名</label>
+          <label class="form-label">头像（可选）</label>
+          <input
+            ref="avatarInput"
+            type="file"
+            accept="image/*"
+            style="display: none"
+            @change="handleAvatarChange"
+          />
+          <div class="avatar-row">
+            <div class="avatar-preview">
+              <img
+                v-if="avatarPreview"
+                class="avatar-image"
+                :src="avatarPreview"
+                alt="avatar"
+              />
+              <span v-else class="avatar-fallback">{{
+                form.nickname.charAt(0) || "U"
+              }}</span>
+            </div>
+            <button
+              type="button"
+              class="avatar-pick-button"
+              @click="triggerAvatarPick"
+            >
+              选择头像
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="username" class="form-label">账号</label>
           <input
             type="text"
             id="username"
             v-model="form.username"
-            placeholder="请输入用户名"
+            placeholder="请输入账号"
             class="form-input"
             required
           />
@@ -81,7 +111,7 @@ import { ref, onMounted, nextTick, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
-import { apiPost } from "../services/api";
+import { apiPost, apiRequest } from "../services/api";
 import { animate, stagger, splitText } from "animejs";
 
 const router = useRouter();
@@ -96,6 +126,41 @@ const form = ref({
   password: "",
   confirmPassword: "",
 });
+
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarFile = ref<File | null>(null);
+const avatarPreview = ref<string | null>(null);
+
+const triggerAvatarPick = (): void => {
+  avatarInput.value?.click();
+};
+
+const handleAvatarChange = (e: Event): void => {
+  const input = e.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    return;
+  }
+
+  if (avatarPreview.value) {
+    try {
+      URL.revokeObjectURL(avatarPreview.value);
+    } catch {
+      // ignore
+    }
+  }
+
+  avatarFile.value = file;
+  avatarPreview.value = URL.createObjectURL(file);
+};
 onMounted(async () => {
   await nextTick();
   if (!titleRef.value) {
@@ -123,6 +188,14 @@ onUnmounted(() => {
   } catch {
     // ignore
   }
+
+  if (avatarPreview.value) {
+    try {
+      URL.revokeObjectURL(avatarPreview.value);
+    } catch {
+      // ignore
+    }
+  }
 });
 const handleRegister = async () => {
   if (form.value.password !== form.value.confirmPassword) {
@@ -131,6 +204,20 @@ const handleRegister = async () => {
 
   loading.value = true;
   try {
+    let avatarUrl: string | undefined;
+    if (avatarFile.value) {
+      const body = new FormData();
+      body.append("file", avatarFile.value);
+      const uploaded = await apiRequest<{ url: string }>(
+        "/api/upload/avatar/temp",
+        {
+          method: "POST",
+          body,
+        },
+      );
+      avatarUrl = uploaded.url;
+    }
+
     await apiPost<{
       user: {
         id: string;
@@ -142,6 +229,7 @@ const handleRegister = async () => {
       username: form.value.username,
       nickname: form.value.nickname,
       password: form.value.password,
+      avatarUrl,
     });
 
     const loginData = await apiPost<{
@@ -245,6 +333,43 @@ const handleRegister = async () => {
   outline: none;
   border-color: #646cff;
   box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.1);
+}
+
+.avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #646cff;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-fallback {
+  font-weight: 700;
+}
+
+.avatar-pick-button {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
 }
 
 .register-button {

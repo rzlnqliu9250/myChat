@@ -56,10 +56,30 @@ class MessageHandler {
         // content：消息内容（文本）
         // type：消息类型（比如 text）
         // clientMessageId：客户端生成的临时 id（用于前端把“sending 的那条消息”匹配到回执）
-        const { receiverId, content, type, clientMessageId } = message.data;
+        const {
+            receiverId,
+            content,
+            type,
+            clientMessageId,
+            mediaUrl,
+            mediaMime,
+            mediaSize,
+        } = message.data;
 
-        if (!receiverId || typeof content !== "string") {
-            logger.warn("没有接收者ID或消息内容不是字符串");
+        if (!receiverId) {
+            logger.warn("没有接收者ID");
+            return;
+        }
+
+        const messageType =
+            typeof type === "string" && type ? type : ("text" as const);
+        const contentText = typeof content === "string" ? content : "";
+
+        if (
+            (messageType === "image" || messageType === "video") &&
+            typeof mediaUrl !== "string"
+        ) {
+            logger.warn("媒体消息缺少 mediaUrl");
             return;
         }
 
@@ -68,17 +88,44 @@ class MessageHandler {
         // 格式：YYYY-MM-DDTHH:mm:ss.sssZ
         const createdAt = new Date().toISOString();
         //写入数据库：把消息持久化
-        const insertResult = await supabase //等数据库操作完成
-            .from("messages") //选中要操作的表,表名是 messages
-            .insert({
-                //.insert({...})：插入一条记录（写入数据库）
-                sender_id: client.userId, //发送方 id（当前 websocket 连接对应的用户）
-                receiver_id: receiverId, //接收方 id
-                content, //消息内容
-                is_read: false, //默认未读
-            })
-            .select("id, created_at") //插入成功后，把这两个字段取回来
-            .single(); //.single() 会把返回结构从 “数组” 变成 “对象”,期望只返回一条记录，而不是数组
+        const baseInsert = {
+            sender_id: client.userId,
+            receiver_id: receiverId,
+            content: contentText,
+            is_read: false,
+            media_url: typeof mediaUrl === "string" ? mediaUrl : null,
+            media_mime: typeof mediaMime === "string" ? mediaMime : null,
+            media_size: typeof mediaSize === "number" ? mediaSize : null,
+        };
+
+        const insertWithMessageType = async () =>
+            supabase
+                .from("messages")
+                .insert({
+                    ...baseInsert,
+                    message_type: messageType,
+                })
+                .select("id, created_at")
+                .single();
+
+        const insertWithType = async () =>
+            supabase
+                .from("messages")
+                .insert({
+                    ...baseInsert,
+                    type: messageType,
+                })
+                .select("id, created_at")
+                .single();
+
+        let insertResult = await insertWithMessageType();
+        if (
+            insertResult.error &&
+            (insertResult.error as any).message &&
+            String((insertResult.error as any).message).includes("message_type")
+        ) {
+            insertResult = await insertWithType();
+        }
 
         //如果写入数据库失败，那么发消息给自己消息保存失败
         if (insertResult.error || !insertResult.data) {
@@ -91,8 +138,11 @@ class MessageHandler {
                     id: `temp_${Date.now()}`,
                     senderId: client.userId,
                     receiverId,
-                    content,
-                    type,
+                    content: contentText,
+                    type: messageType,
+                    mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null,
+                    mediaMime: typeof mediaMime === "string" ? mediaMime : null,
+                    mediaSize: typeof mediaSize === "number" ? mediaSize : null,
                     status: "failed" as const,
                     createTime: Date.now(),
                     updateTime: Date.now(),
@@ -117,8 +167,11 @@ class MessageHandler {
                 id: messageId,
                 senderId: client.userId,
                 receiverId,
-                content,
-                type,
+                content: contentText,
+                type: messageType,
+                mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null,
+                mediaMime: typeof mediaMime === "string" ? mediaMime : null,
+                mediaSize: typeof mediaSize === "number" ? mediaSize : null,
                 status: "sent" as const,
                 createTime: createTimeMs,
                 updateTime: createTimeMs,

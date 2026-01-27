@@ -18,7 +18,10 @@ export interface Message {
   senderId: string;
   receiverId: string;
   content: string;
-  type: "text" | "image" | "file" | "system";
+  type: "text" | "image" | "video" | "file" | "system";
+  mediaUrl?: string | null;
+  mediaMime?: string | null;
+  mediaSize?: number | null;
   status: MessageStatusValue;
   createTime: number;
   updateTime: number;
