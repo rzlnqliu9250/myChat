@@ -1,5 +1,8 @@
 <template>
   <div class="login-container">
+    <div id="animation" class="large grid centered square-grid">
+      <h2 ref="titleRef" class="text-xl">HELLO MYCHAT</h2>
+    </div>
     <div class="login-form-wrapper">
       <h1 class="login-title">登录</h1>
       <form @submit.prevent="handleLogin" class="login-form">
@@ -47,15 +50,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, nextTick, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
 import { apiPost } from "../services/api";
+import { animate, stagger, splitText } from "animejs";
 
 const router = useRouter();
 const userStore = useUserStore();
 const { connect, wsManager } = useWebSocket();
+
+const titleRef = ref<HTMLElement | null>(null);
+let titleAnimation: { pause?: () => void } | null = null;
 
 const loading = ref(false);
 const form = ref({
@@ -63,6 +70,35 @@ const form = ref({
   password: "",
 });
 
+onMounted(async () => {
+  await nextTick();
+  if (!titleRef.value) {
+    return;
+  }
+  const { chars } = splitText(titleRef.value, { words: false, chars: true });
+  titleAnimation = animate(chars, {
+    y: [
+      { to: "-2.75rem", ease: "outExpo", duration: 600 },
+      { to: 0, ease: "outBounce", duration: 800, delay: 100 },
+    ],
+    rotate: {
+      from: "-1turn",
+      delay: 0,
+    },
+    delay: stagger(50),
+    ease: "inOutCirc",
+    loopDelay: 1000,
+    loop: true,
+  });
+});
+
+onUnmounted(() => {
+  try {
+    titleAnimation?.pause?.();
+  } catch {
+    // ignore
+  }
+});
 const handleLogin = async () => {
   loading.value = true;
   try {
@@ -105,10 +141,20 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
+#animation .text-xl {
+  font-size: 3rem;
+  color: currentColor;
+  letter-spacing: 0.06em;
+}
+
+#animation {
+  margin-bottom: 16px;
+}
 .login-container {
   width: 100vw;
   height: 100vh;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   background-color: #f5f5f5;

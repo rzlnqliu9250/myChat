@@ -69,6 +69,9 @@ class UserManager {
     }
 
     //检查用户是否在线,用于好友列表接口的 online: boolean
+    //内存里的在线用户表 users 里有没有这个 userId？
+    // 有：说明服务端当前还保存着他的 WS 连接 → 认为“在线”
+    // 没有：说明没有连接记录 → 认为“不在线”
     isUserOnline(userId: string): boolean {
         return this.users.has(userId);
     }

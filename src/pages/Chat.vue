@@ -106,6 +106,7 @@
           <div class="friend-info">
             <div class="friend-name">
               {{ friend.nickname || friend.username }}
+              <span v-if="unreadCounts[friend.id]" class="unread-dot"></span>
             </div>
             <div class="friend-status">
               <span class="status-indicator" :class="friend.status"></span>
@@ -124,51 +125,53 @@
 
     <!-- 主内容区：聊天窗口 -->
     <main class="chat-main">
-      <div v-if="!selectedFriend" class="no-selection">
-        <div class="no-selection-content">
-          <h2>选择一个好友开始聊天</h2>
-          <p>从左侧列表中选择一个好友，开始您的聊天之旅</p>
-        </div>
-      </div>
-      <div v-else class="chat-window">
-        <!-- 聊天头部 -->
-        <header class="chat-header">
-          <div class="chat-header-info">
-            <div class="friend-avatar">
-              {{
-                (selectedFriend.nickname || selectedFriend.username).charAt(0)
-              }}
-            </div>
-            <div>
-              <h3 class="friend-name">
-                {{ selectedFriend.nickname || selectedFriend.username }}
-              </h3>
-              <span class="friend-status">
-                <span
-                  class="status-indicator"
-                  :class="selectedFriend.status"
-                ></span>
-                {{ selectedFriend.status }}
-              </span>
-            </div>
+      <transition name="chat-fade-slide" mode="out-in">
+        <div v-if="!selectedFriend" key="no-selection" class="no-selection">
+          <div class="no-selection-content">
+            <h2>选择一个好友开始聊天</h2>
+            <p>从左侧列表中选择一个好友，开始您的聊天之旅</p>
           </div>
-        </header>
-
-        <!-- 聊天消息区域 -->
-        <div class="chat-messages" ref="messagesContainer">
-          <message-bubble
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
-            :current-user-id="currentUser?.id || ''"
-          />
         </div>
+        <div v-else :key="selectedFriend?.id" class="chat-window">
+          <!-- 聊天头部 -->
+          <header class="chat-header">
+            <div class="chat-header-info">
+              <div class="friend-avatar">
+                {{
+                  (selectedFriend.nickname || selectedFriend.username).charAt(0)
+                }}
+              </div>
+              <div>
+                <h3 class="friend-name">
+                  {{ selectedFriend.nickname || selectedFriend.username }}
+                </h3>
+                <span class="friend-status">
+                  <span
+                    class="status-indicator"
+                    :class="selectedFriend.status"
+                  ></span>
+                  {{ selectedFriend.status }}
+                </span>
+              </div>
+            </div>
+          </header>
 
-        <!-- 聊天输入区域 -->
-        <footer class="chat-input-area">
-          <chat-input @send="handleSendMessage" />
-        </footer>
-      </div>
+          <!-- 聊天消息区域 -->
+          <div class="chat-messages" ref="messagesContainer">
+            <message-bubble
+              v-for="message in messages"
+              :key="message.id"
+              :message="message"
+              :current-user-id="currentUser?.id || ''"
+            />
+          </div>
+
+          <!-- 聊天输入区域 -->
+          <footer class="chat-input-area">
+            <chat-input @send="handleSendMessage" />
+          </footer>
+        </div>
+      </transition>
     </main>
   </div>
 </template>
@@ -192,6 +195,71 @@ const searchQuery = ref("");
 const selectedFriend = ref<any>(null);
 const messages = ref<Message[]>([]);
 const messagesContainer = ref<HTMLElement | null>(null);
+
+const unreadCounts = ref<Record<string, number>>({});
+
+const incrementUnread = (friendId: string): void => {
+  unreadCounts.value = {
+    ...unreadCounts.value,
+    [friendId]: (unreadCounts.value[friendId] || 0) + 1,
+  };
+};
+
+const clearUnread = (friendId: string): void => {
+  if (!unreadCounts.value[friendId]) {
+    return;
+  }
+  const { [friendId]: _removed, ...rest } = unreadCounts.value;
+  unreadCounts.value = rest;
+};
+
+const maybeNotifyDesktop = (friendId: string, content: string): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (typeof Notification === "undefined") {
+    return;
+  }
+  if (!document.hidden) {
+    return;
+  }
+
+  if (Notification.permission !== "granted") {
+    return;
+  }
+
+  const friend = friends.value.find((f) => f.id === friendId);
+  const title = friend?.nickname || friend?.username || "新消息";
+  const body = typeof content === "string" ? content : "";
+
+  const show = () => {
+    try {
+      const n = new Notification(title, {
+        body,
+      });
+      n.onclick = () => {
+        try {
+          window.focus();
+        } catch {
+          // ignore
+        }
+        const target = friends.value.find((f) => f.id === friendId);
+        if (target) {
+          void selectFriend(target);
+        }
+        try {
+          n.close();
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      // ignore
+    }
+  };
+
+  show();
+};
 
 const scrollMessagesToBottom = async (
   behavior: ScrollBehavior = "auto",
@@ -459,6 +527,9 @@ const filteredFriends = computed(() => {
 // 选择好友
 const selectFriend = async (friend: any) => {
   selectedFriend.value = friend;
+  if (friend?.id) {
+    clearUnread(friend.id);
+  }
   await fetchMessages(friend.id);
 };
 
@@ -540,6 +611,13 @@ onMounted(() => {
       const removedA = data?.userId;
       const removedB = data?.friendId;
 
+      if (removedA) {
+        clearUnread(removedA);
+      }
+      if (removedB) {
+        clearUnread(removedB);
+      }
+
       if (
         selectedFriend.value?.id &&
         (selectedFriend.value.id === removedA ||
@@ -606,6 +684,19 @@ onMounted(() => {
         updateTime: message.updateTime || Date.now(),
       });
       void scrollMessagesToBottom("smooth");
+    }
+
+    if (
+      me &&
+      message.receiverId === me &&
+      message.senderId &&
+      message.senderId !== me
+    ) {
+      const incomingFriendId = String(message.senderId);
+      if (!isCurrentConversation) {
+        incrementUnread(incomingFriendId);
+      }
+      maybeNotifyDesktop(incomingFriendId, String(message.content || ""));
     }
   });
 });
@@ -863,6 +954,50 @@ onMounted(() => {
 
 .friend-item.active {
   background-color: #e8eaf6;
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff1744;
+  display: inline-block;
+  margin-left: 8px;
+  animation: unreadPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes unreadPulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  60% {
+    transform: scale(1.35);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unread-dot {
+    animation: none;
+  }
+}
+
+.chat-fade-slide-enter-active,
+.chat-fade-slide-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.chat-fade-slide-enter-from,
+.chat-fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
 }
 
 .friend-info {
