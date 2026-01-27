@@ -98,39 +98,39 @@ const handleFileChange = (e: Event) => {
 }
 
 .media-button {
-  /* --- 核心：打造完美圆形 --- */
-  width: 40px; /* 宽度一定要写死 */
-  height: 40px; /* 高度一定要和宽度一样 */
-  padding: 0; /* 清除内边距，防止把圆撑歪 */
-  border-radius: 50%; /* 宽高相等时，50% 就是正圆 */
-  /* ----------------------- */
-
-  /* --- 核心：让加号完美居中 --- */
+  /* --- 你之前的核心样式保持不变 --- */
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
   display: flex;
-  justify-content: center; /* 水平居中 */
-  align-items: center; /* 垂直居中 */
-  /* ----------------------- */
-
-  /* 其他样式 */
+  justify-content: center;
+  align-items: center;
   border: 1px solid #ddd;
   background: #fff;
-  color: #555; /* 稍微淡一点的灰色更好看 */
-  font-size: 22px; /* 加号大小 */
-  /* line-height: 1;  <-- 删除这行，Flex布局不需要它 */
+  color: #555;
+  font-size: 22px;
   cursor: pointer;
-
-  /* 防止在父容器中被挤压变形 */
   flex-shrink: 0;
   flex-grow: 0;
-
-  /* 加个小动画让点击更顺滑 */
   transition: all 0.2s;
+
+  /* --- 关键修复：去掉点击时的黑边或默认变黑效果 --- */
+  outline: none; /* 去掉聚焦时的蓝色或黑色边框 */
+  -webkit-tap-highlight-color: transparent; /* 去掉移动端点击时的蓝色阴影 */
 }
 
-/* 鼠标悬停效果（可选） */
+/* 悬停效果 */
 .media-button:hover {
   background-color: #f5f5f5;
   border-color: #ccc;
+}
+
+/* --- 关键修复：自定义点击瞬间的状态，防止变黑 --- */
+.media-button:active {
+  background-color: #ececec; /* 点击时稍微变深一点灰，而不是变黑 */
+  transform: scale(0.95); /* 增加一个轻微缩小的物理反馈，看起来更高级 */
+  border-color: #bbb;
 }
 
 .media-button:disabled {
