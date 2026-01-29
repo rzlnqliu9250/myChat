@@ -205,13 +205,13 @@ const handleLogin = async () => {
 
 .form-input:focus {
   outline: none;
-  border-color: #646cff;
-  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.1);
+  border-color: #0001f0;
+  box-shadow: 0 0 0 2px rgba(0, 125, 255, 0.1);
 }
 
 .login-button {
   padding: 14px;
-  background-color: #646cff;
+  background-color: #0001f0;
   color: white;
   border: none;
   border-radius: 4px;
@@ -248,7 +248,7 @@ const handleLogin = async () => {
 }
 
 .login-button:hover:not(:disabled) {
-  background-color: #535bf2;
+  background-color: #0001f0;
 }
 
 .login-button:disabled {
@@ -264,14 +264,14 @@ const handleLogin = async () => {
 }
 
 .register-link {
-  color: #646cff;
+  color: #0001f0;
   text-decoration: none;
   font-weight: 500;
   transition: color 0.3s;
 }
 
 .register-link:hover {
-  color: #535bf2;
+  color: #0001f0;
   text-decoration: underline;
 }
 </style>

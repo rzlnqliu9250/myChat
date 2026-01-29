@@ -331,8 +331,8 @@ const handleRegister = async () => {
 
 .form-input:focus {
   outline: none;
-  border-color: #646cff;
-  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.1);
+  border-color: #0001f0;
+  box-shadow: 0 0 0 2px rgba(0, 125, 255, 0.1);
 }
 
 .avatar-row {
@@ -345,7 +345,7 @@ const handleRegister = async () => {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #646cff;
+  background: #0001f0;
   color: #fff;
   display: flex;
   align-items: center;
@@ -411,7 +411,7 @@ const handleRegister = async () => {
 }
 
 .register-button:hover:not(:disabled) {
-  background-color: #36a474;
+  background-color: #01a649;
 }
 
 .register-button:disabled {
@@ -442,7 +442,7 @@ const handleRegister = async () => {
 }
 
 .login-link:hover {
-  color: #36a474;
+  color: #01a649;
   text-decoration: underline;
 }
 </style>

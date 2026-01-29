@@ -154,7 +154,7 @@ const handleFileChange = (e: Event) => {
 }
 
 .message-input:focus {
-  border-color: #646cff;
+  border-color: #0001f0;
 }
 
 .message-input:disabled {
@@ -164,7 +164,7 @@ const handleFileChange = (e: Event) => {
 
 .send-button {
   padding: 12px 24px;
-  background-color: #646cff;
+  background-color: #0001f0;
   color: white;
   border: none;
   border-radius: 24px;
@@ -177,7 +177,7 @@ const handleFileChange = (e: Event) => {
 }
 
 .send-button:hover:not(:disabled) {
-  background-color: #535bf2;
+  background-color: #0001f0;
 }
 
 .send-button:disabled {

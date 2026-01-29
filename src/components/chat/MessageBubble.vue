@@ -115,7 +115,7 @@ const getStatusText = (status: string) => {
 }
 
 .message-bubble.sent .message-content {
-  background-color: #646cff;
+  background-color: #0001f0;
   color: white;
   border-bottom-right-radius: 4px;
 }

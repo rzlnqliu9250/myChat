@@ -1,152 +1,25 @@
 <template>
   <div class="chat-container">
-    <!-- 侧边栏：好友列表 -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <div class="user-info">
-          <input
-            ref="avatarInput"
-            type="file"
-            accept="image/*"
-            style="display: none"
-            @change="handleAvatarFileChange"
-          />
-          <div class="user-avatar" @click="triggerAvatarPick">
-            <img
-              v-if="currentUser?.avatar"
-              class="avatar-image"
-              :src="currentUser.avatar"
-              alt="avatar"
-            />
-            <span v-else>
-              {{
-                (currentUser?.nickname || currentUser?.username || "U").charAt(
-                  0,
-                )
-              }}
-            </span>
-          </div>
-          <div class="user-details">
-            <h3 class="user-name">
-              {{ currentUser?.nickname || currentUser?.username || "未登录" }}
-            </h3>
-            <span class="user-status">{{
-              currentUser?.status || "offline"
-            }}</span>
-          </div>
-        </div>
-        <button class="logout-button" @click="handleLogout">退出登录</button>
-      </div>
-
-      <!-- 搜索框 -->
-      <div class="search-box">
-        <input
-          type="text"
-          placeholder="搜索好友..."
-          v-model="searchQuery"
-          class="search-input"
-        />
-      </div>
-
-      <div class="friend-actions">
-        <div class="friend-actions-title">添加好友</div>
-        <div class="friend-request-form">
-          <input
-            v-model="friendRequestUsername"
-            class="friend-request-input"
-            placeholder="输入对方用户名"
-            type="text"
-          />
-          <button
-            class="friend-request-button"
-            :disabled="friendRequestLoading || !friendRequestUsername"
-            @click="sendFriendRequest"
-          >
-            发送
-          </button>
-        </div>
-        <div v-if="friendRequestError" class="friend-request-error">
-          {{ friendRequestError }}
-        </div>
-        <div v-if="friendRequestSuccess" class="friend-request-success">
-          {{ friendRequestSuccess }}
-        </div>
-      </div>
-
-      <div class="friend-requests" v-if="incomingRequests.length">
-        <div class="friend-requests-title">
-          好友申请
-          <span class="friend-requests-count"
-            >({{ incomingRequests.length }})</span
-          >
-        </div>
-        <div
-          v-for="req in incomingRequests"
-          :key="req.id"
-          class="friend-request-item"
-        >
-          <div class="friend-request-user">
-            {{ req.fromUser?.nickname || req.fromUser?.username || "未知用户" }}
-          </div>
-          <div class="friend-request-actions">
-            <button
-              class="friend-request-action accept"
-              :disabled="requestActionLoadingIds.has(req.id)"
-              @click="acceptRequest(req.id)"
-            >
-              同意
-            </button>
-            <button
-              class="friend-request-action reject"
-              :disabled="requestActionLoadingIds.has(req.id)"
-              @click="rejectRequest(req.id)"
-            >
-              拒绝
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 好友列表 -->
-      <div class="friend-list">
-        <h4 class="friend-list-title">好友列表</h4>
-        <div
-          v-for="friend in filteredFriends"
-          :key="friend.id"
-          class="friend-item"
-          :class="{ active: selectedFriend?.id === friend.id }"
-          @click="selectFriend(friend)"
-        >
-          <div class="friend-avatar">
-            <img
-              v-if="friend.avatarUrl"
-              class="avatar-image"
-              :src="friend.avatarUrl"
-              alt="avatar"
-            />
-            <span v-else>{{
-              (friend.nickname || friend.username).charAt(0)
-            }}</span>
-          </div>
-          <div class="friend-info">
-            <div class="friend-name">
-              {{ friend.nickname || friend.username }}
-              <span v-if="unreadCounts[friend.id]" class="unread-dot"></span>
-            </div>
-            <div class="friend-status">
-              <span class="status-indicator" :class="friend.status"></span>
-              {{ friend.status }}
-            </div>
-          </div>
-          <button
-            class="friend-delete-button"
-            @click.stop="handleDeleteFriend(friend)"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </aside>
+    <chat-sidebar
+      :current-user="currentUser"
+      v-model:searchQuery="searchQuery"
+      v-model:friendRequestUsername="friendRequestUsername"
+      :friend-request-loading="friendRequestLoading"
+      :friend-request-error="friendRequestError"
+      :friend-request-success="friendRequestSuccess"
+      :incoming-requests="incomingRequests"
+      :request-action-loading-ids="requestActionLoadingIds"
+      :friends="filteredFriends"
+      :selected-friend-id="selectedFriend?.id || null"
+      :unread-counts="unreadCounts"
+      @logout="handleLogout"
+      @sendFriendRequest="sendFriendRequest"
+      @acceptRequest="acceptRequest"
+      @rejectRequest="rejectRequest"
+      @selectFriend="selectFriend"
+      @deleteFriend="handleDeleteFriend"
+      @avatarSelected="handleAvatarSelected"
+    />
 
     <!-- 主内容区：聊天窗口 -->
     <main class="chat-main">
@@ -159,37 +32,7 @@
         </div>
         <div v-else :key="selectedFriend?.id" class="chat-window">
           <!-- 聊天头部 -->
-          <header class="chat-header">
-            <div class="chat-header-info">
-              <div class="friend-avatar">
-                <img
-                  v-if="selectedFriend.avatarUrl"
-                  class="avatar-image"
-                  :src="selectedFriend.avatarUrl"
-                  alt="avatar"
-                />
-                <span v-else>
-                  {{
-                    (selectedFriend.nickname || selectedFriend.username).charAt(
-                      0,
-                    )
-                  }}
-                </span>
-              </div>
-              <div>
-                <h3 class="friend-name">
-                  {{ selectedFriend.nickname || selectedFriend.username }}
-                </h3>
-                <span class="friend-status">
-                  <span
-                    class="status-indicator"
-                    :class="selectedFriend.status"
-                  ></span>
-                  {{ selectedFriend.status }}
-                </span>
-              </div>
-            </div>
-          </header>
+          <ChatHeader :friend="selectedFriend" />
 
           <!-- 聊天消息区域 -->
           <div class="chat-messages" ref="messagesContainer">
@@ -215,164 +58,127 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
 import { WebSocketEvent } from "../models/WebSocket";
-import type { Message } from "../models/Message";
 import MessageBubble from "../components/chat/MessageBubble.vue";
 import ChatInput from "../components/chat/ChatInput.vue";
-import { apiDelete, apiGet, apiPost, apiRequest } from "../services/api";
+import ChatSidebar from "../components/chat/ChatSidebar.vue";
+import ChatHeader from "../components/chat/ChatHeader.vue";
+import { apiDelete } from "../services/api";
+import { useAvatarUpload } from "../composables/chat/useAvatarUpload";
+import { useDesktopNotify } from "../composables/chat/useDesktopNotify";
+import { useFriendRequests } from "../composables/chat/useFriendRequests";
+import { useFriends } from "../composables/chat/useFriends";
+import { useScrollMessagesToBottom } from "../composables/chat/useScrollMessagesToBottom";
+import { useUnreadCounts } from "../composables/chat/useUnreadCounts";
+import { useChatMessages } from "../composables/chat/useChatMessages";
+import type { UiFriend } from "../types/chat";
 
 const router = useRouter();
 const userStore = useUserStore();
 const { send, on, connect } = useWebSocket();
 
 const searchQuery = ref("");
-const selectedFriend = ref<any>(null);
-const messages = ref<Message[]>([]);
+const selectedFriend = ref<UiFriend | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
-const avatarInput = ref<HTMLInputElement | null>(null);
 
-const unreadCounts = ref<Record<string, number>>({});
+let fetchMessagesImpl: (friendId: string) => Promise<void> = async () => {};
 
-const incrementUnread = (friendId: string): void => {
-  unreadCounts.value = {
-    ...unreadCounts.value,
-    [friendId]: (unreadCounts.value[friendId] || 0) + 1,
-  };
+const { unreadCounts, incrementUnread, clearUnread } = useUnreadCounts();
+const { scrollMessagesToBottom } = useScrollMessagesToBottom(messagesContainer);
+const { handleAvatarSelected } = useAvatarUpload(userStore);
+
+const setStoreFriends = (uiFriends: UiFriend[]) => {
+  userStore.setFriends(
+    uiFriends.map((f) => ({
+      id: f.id,
+      username: f.username,
+      nickname: f.nickname,
+      avatar: f.avatarUrl || undefined,
+      status: f.status as any,
+    })),
+  );
 };
 
-const triggerAvatarPick = (): void => {
-  if (!userStore.token) {
-    return;
+const { friends, fetchFriends } = useFriends(
+  () => userStore.token,
+  setStoreFriends,
+);
+
+const {
+  friendRequestUsername,
+  friendRequestLoading,
+  friendRequestError,
+  friendRequestSuccess,
+  incomingRequests,
+  requestActionLoadingIds,
+  sendFriendRequest,
+  acceptRequest,
+  rejectRequest,
+  fetchIncomingRequests,
+} = useFriendRequests(() => userStore.token, fetchFriends);
+
+// 当前登录用户
+const currentUser = computed(() => userStore.currentUser);
+
+const selectFriend = async (friend: UiFriend) => {
+  selectedFriend.value = friend;
+  if (friend?.id) {
+    clearUnread(friend.id);
   }
-  avatarInput.value?.click();
+  await fetchMessagesImpl(friend.id);
 };
 
-const handleAvatarFileChange = async (e: Event): Promise<void> => {
-  const token = userStore.token;
-  if (!token) {
-    return;
+const { maybeNotifyDesktop } = useDesktopNotify(friends, selectFriend);
+
+const filteredFriends = computed(() => {
+  if (!searchQuery.value) {
+    return friends.value;
+  }
+  const q = searchQuery.value.toLowerCase();
+  return friends.value.filter(
+    (friend) =>
+      (friend.nickname || "").toLowerCase().includes(q) ||
+      (friend.username || "").toLowerCase().includes(q),
+  );
+});
+
+const {
+  messages,
+  fetchMessages,
+  handleSendMessage,
+  handleSendMedia,
+  handleMessageReceive,
+} = useChatMessages({
+  getToken: () => userStore.token,
+  currentUser,
+  selectedFriend,
+  friends,
+  scrollMessagesToBottom,
+  incrementUnread,
+  maybeNotifyDesktop,
+  send,
+});
+
+fetchMessagesImpl = fetchMessages;
+
+const setFriendStatus = (
+  friendId: string,
+  status: "online" | "offline",
+): void => {
+  const target = friends.value.find((f) => f.id === friendId);
+  if (target) {
+    target.status = status;
   }
 
-  const input = e.target as HTMLInputElement | null;
-  const file = input?.files?.[0];
-  if (!file) {
-    return;
+  if (selectedFriend.value?.id === friendId) {
+    selectedFriend.value.status = status;
   }
 
-  if (!file.type.startsWith("image/")) {
-    return;
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    return;
-  }
-
-  const form = new FormData();
-  form.append("file", file);
-
-  try {
-    const resp = await apiRequest<{ url: string }>(
-      "/api/upload/avatar",
-      {
-        method: "POST",
-        body: form,
-      },
-      token,
-    );
-
-    if (userStore.currentUser) {
-      userStore.setCurrentUser({
-        ...userStore.currentUser,
-        avatar: resp.url,
-      });
-    }
-  } catch (err) {
-    console.error(err);
-  } finally {
-    try {
-      if (input) {
-        input.value = "";
-      }
-    } catch {
-      // ignore
-    }
-  }
-};
-
-const clearUnread = (friendId: string): void => {
-  if (!unreadCounts.value[friendId]) {
-    return;
-  }
-  const { [friendId]: _removed, ...rest } = unreadCounts.value;
-  unreadCounts.value = rest;
-};
-
-const maybeNotifyDesktop = (friendId: string, content: string): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  if (typeof Notification === "undefined") {
-    return;
-  }
-  if (!document.hidden) {
-    return;
-  }
-
-  if (Notification.permission !== "granted") {
-    return;
-  }
-
-  const friend = friends.value.find((f) => f.id === friendId);
-  const title = friend?.nickname || friend?.username || "新消息";
-  const body = typeof content === "string" ? content : "";
-
-  const show = () => {
-    try {
-      const n = new Notification(title, {
-        body,
-      });
-      n.onclick = () => {
-        try {
-          window.focus();
-        } catch {
-          // ignore
-        }
-        const target = friends.value.find((f) => f.id === friendId);
-        if (target) {
-          void selectFriend(target);
-        }
-        try {
-          n.close();
-        } catch {
-          // ignore
-        }
-      };
-    } catch {
-      // ignore
-    }
-  };
-
-  show();
-};
-
-const scrollMessagesToBottom = async (
-  behavior: ScrollBehavior = "auto",
-): Promise<void> => {
-  await nextTick();
-  const el = messagesContainer.value;
-  if (!el) {
-    return;
-  }
-
-  try {
-    el.scrollTo({ top: el.scrollHeight, behavior });
-  } catch {
-    el.scrollTop = el.scrollHeight;
-  }
+  setStoreFriends(friends.value);
 };
 
 const handleDeleteFriend = async (friend: UiFriend) => {
@@ -399,375 +205,6 @@ const handleDeleteFriend = async (friend: UiFriend) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : "";
     friendRequestError.value = msg && msg !== "请求失败" ? msg : "删除好友失败";
-  }
-};
-
-// ... rest of the code remains the same ...
-// 当前登录用户
-const currentUser = computed(() => userStore.currentUser);
-
-type ApiFriend = {
-  id: string;
-  username: string;
-  nickname: string;
-  avatarUrl: string | null;
-  online: boolean;
-};
-
-type UiFriend = ApiFriend & {
-  status: "online" | "offline";
-};
-
-const friends = ref<UiFriend[]>([]);
-
-type IncomingRequest = {
-  id: string;
-  fromUser: {
-    id: string;
-    username: string;
-    nickname: string;
-    avatarUrl: string | null;
-  } | null;
-  createdAt: string;
-  status: string;
-};
-
-const friendRequestUsername = ref("");
-const friendRequestLoading = ref(false);
-const friendRequestError = ref<string | null>(null);
-const friendRequestSuccess = ref<string | null>(null);
-
-const incomingRequests = ref<IncomingRequest[]>([]);
-const requestActionLoadingIds = ref(new Set<string>());
-
-const fetchFriends = async () => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  let data: { friends: ApiFriend[] };
-  try {
-    data = await apiGet<{ friends: ApiFriend[] }>("/api/friends", token);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    throw new Error(msg && msg !== "请求失败" ? msg : "加载好友失败");
-  }
-
-  friends.value = (data.friends || []).map((f) => ({
-    ...f,
-    status: f.online ? ("online" as const) : ("offline" as const),
-  }));
-
-  userStore.setFriends(
-    friends.value.map((f) => ({
-      id: f.id,
-      username: f.username,
-      nickname: f.nickname,
-      avatar: f.avatarUrl || undefined,
-      status: f.status,
-    })),
-  );
-};
-
-const fetchMessages = async (friendId: string) => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  let data: {
-    messages: {
-      id: string;
-      senderId: string;
-      receiverId: string;
-      content: string;
-      type?: string;
-      mediaUrl?: string | null;
-      mediaMime?: string | null;
-      mediaSize?: number | null;
-      isRead: boolean;
-      createdAt: string;
-    }[];
-  };
-
-  try {
-    data = await apiGet<typeof data>(`/api/messages/${friendId}`, token);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    throw new Error(msg && msg !== "请求失败" ? msg : "加载聊天记录失败");
-  }
-
-  messages.value = (data.messages || []).map((m) => {
-    const ts = new Date(m.createdAt).getTime();
-    return {
-      id: m.id,
-      senderId: m.senderId,
-      receiverId: m.receiverId,
-      content: m.content,
-      type: ((m.type as any) || "text") as any,
-      mediaUrl: m.mediaUrl ?? null,
-      mediaMime: m.mediaMime ?? null,
-      mediaSize: m.mediaSize ?? null,
-      status: m.isRead ? ("read" as const) : ("delivered" as const),
-      createTime: ts,
-      updateTime: ts,
-    } satisfies Message;
-  });
-
-  void scrollMessagesToBottom();
-};
-
-const fetchIncomingRequests = async () => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  let data: { requests: IncomingRequest[] };
-  try {
-    data = await apiGet<{ requests: IncomingRequest[] }>(
-      "/api/friends/requests",
-      token,
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    throw new Error(msg && msg !== "请求失败" ? msg : "加载好友申请失败");
-  }
-
-  incomingRequests.value = data.requests || [];
-};
-
-const sendFriendRequest = async () => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  friendRequestLoading.value = true;
-  friendRequestError.value = null;
-  friendRequestSuccess.value = null;
-
-  try {
-    await apiPost<unknown>(
-      "/api/friends/request",
-      { username: friendRequestUsername.value },
-      token,
-    );
-
-    friendRequestSuccess.value = "已发送好友申请";
-    friendRequestUsername.value = "";
-    await fetchIncomingRequests();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    friendRequestError.value =
-      msg && msg !== "请求失败" ? msg : "发送好友申请失败";
-  } finally {
-    friendRequestLoading.value = false;
-  }
-};
-
-const acceptRequest = async (requestId: string) => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  requestActionLoadingIds.value.add(requestId);
-  try {
-    await apiPost<unknown>(
-      `/api/friends/requests/${requestId}/accept`,
-      undefined,
-      token,
-    );
-
-    await Promise.all([fetchIncomingRequests(), fetchFriends()]);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    friendRequestError.value = msg && msg !== "请求失败" ? msg : "同意失败";
-  } finally {
-    requestActionLoadingIds.value.delete(requestId);
-  }
-};
-
-const rejectRequest = async (requestId: string) => {
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  requestActionLoadingIds.value.add(requestId);
-  try {
-    await apiPost<unknown>(
-      `/api/friends/requests/${requestId}/reject`,
-      undefined,
-      token,
-    );
-
-    await fetchIncomingRequests();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    friendRequestError.value = msg && msg !== "请求失败" ? msg : "拒绝失败";
-  } finally {
-    requestActionLoadingIds.value.delete(requestId);
-  }
-};
-
-// 筛选好友
-const filteredFriends = computed(() => {
-  if (!searchQuery.value) {
-    return friends.value;
-  }
-  return friends.value.filter(
-    (friend) =>
-      (friend.nickname || "")
-        .toLowerCase()
-        .includes(searchQuery.value.toLowerCase()) ||
-      (friend.username || "")
-        .toLowerCase()
-        .includes(searchQuery.value.toLowerCase()),
-  );
-});
-
-// 选择好友
-const selectFriend = async (friend: any) => {
-  selectedFriend.value = friend;
-  if (friend?.id) {
-    clearUnread(friend.id);
-  }
-  await fetchMessages(friend.id);
-};
-
-// 发送消息
-const handleSendMessage = (content: string) => {
-  if (!selectedFriend.value || !currentUser.value) {
-    return;
-  }
-
-  const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-  const message: Message = {
-    id: clientMessageId,
-    senderId: currentUser.value.id,
-    receiverId: selectedFriend.value.id,
-    content: content,
-    type: "text" as const,
-    status: "sending" as const,
-    createTime: Date.now(),
-    updateTime: Date.now(),
-  };
-
-  // 添加到本地消息列表
-  messages.value.push(message);
-  void scrollMessagesToBottom("smooth");
-
-  // 发送消息到服务器（实际应该通过WebSocket发送）
-  send(WebSocketEvent.MESSAGE_RECEIVE, {
-    clientMessageId,
-    content: content,
-    receiverId: selectedFriend.value.id,
-    type: "text",
-  });
-};
-
-const handleSendMedia = async (file: File) => {
-  if (!selectedFriend.value || !currentUser.value) {
-    return;
-  }
-  const token = userStore.token;
-  if (!token) {
-    return;
-  }
-
-  if (file.size > 10 * 1024 * 1024) {
-    return;
-  }
-
-  const isImage = file.type.startsWith("image/");
-  const isVideo = file.type.startsWith("video/");
-  if (!isImage && !isVideo) {
-    return;
-  }
-
-  const msgType = isImage ? ("image" as const) : ("video" as const);
-  const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  const previewUrl = URL.createObjectURL(file);
-
-  const localMsg: Message = {
-    id: clientMessageId,
-    senderId: currentUser.value.id,
-    receiverId: selectedFriend.value.id,
-    content: "",
-    type: msgType,
-    mediaUrl: previewUrl,
-    mediaMime: file.type,
-    mediaSize: file.size,
-    status: "sending" as const,
-    createTime: Date.now(),
-    updateTime: Date.now(),
-  };
-
-  messages.value.push(localMsg);
-  void scrollMessagesToBottom("smooth");
-
-  const form = new FormData();
-  form.append("file", file);
-
-  try {
-    const uploadResp = await apiRequest<{
-      url: string;
-      mime: string;
-      size: number;
-    }>(
-      "/api/upload/chat-media",
-      {
-        method: "POST",
-        body: form,
-      },
-      token,
-    );
-
-    try {
-      URL.revokeObjectURL(previewUrl);
-    } catch {
-      // ignore
-    }
-
-    const idx = messages.value.findIndex((m) => m.id === clientMessageId);
-    if (idx >= 0) {
-      const existing = messages.value[idx];
-      if (existing) {
-        messages.value[idx] = {
-          ...existing,
-          mediaUrl: uploadResp.url,
-          mediaMime: uploadResp.mime,
-          mediaSize: uploadResp.size,
-        };
-      }
-    }
-
-    send(WebSocketEvent.MESSAGE_RECEIVE, {
-      clientMessageId,
-      receiverId: selectedFriend.value.id,
-      content: "",
-      type: msgType,
-      mediaUrl: uploadResp.url,
-      mediaMime: uploadResp.mime,
-      mediaSize: uploadResp.size,
-    });
-  } catch (err) {
-    const idx = messages.value.findIndex((m) => m.id === clientMessageId);
-    if (idx >= 0) {
-      const existing = messages.value[idx];
-      if (existing) {
-        messages.value[idx] = {
-          ...existing,
-          status: "failed" as const,
-          updateTime: Date.now(),
-        };
-      }
-    }
-    console.error(err);
   }
 };
 
@@ -810,6 +247,22 @@ onMounted(() => {
     }, 3000);
   });
 
+  on(WebSocketEvent.USER_ONLINE, (data: { userId?: string } | undefined) => {
+    const userId = data?.userId ? String(data.userId) : "";
+    if (!userId) {
+      return;
+    }
+    setFriendStatus(userId, "online");
+  });
+
+  on(WebSocketEvent.USER_OFFLINE, (data: { userId?: string } | undefined) => {
+    const userId = data?.userId ? String(data.userId) : "";
+    if (!userId) {
+      return;
+    }
+    setFriendStatus(userId, "offline");
+  });
+
   on(
     WebSocketEvent.FRIEND_REMOVED,
     (data: { userId?: string; friendId?: string } | undefined) => {
@@ -843,93 +296,7 @@ onMounted(() => {
 
   // 监听新消息
   on(WebSocketEvent.MESSAGE_RECEIVE, (message: any) => {
-    if (!message) {
-      return;
-    }
-
-    const me = currentUser.value?.id;
-    const friendId = selectedFriend.value?.id;
-
-    // 如果是我发出的消息回执：用 clientMessageId 找到本地 sending 消息并更新
-    if (message.clientMessageId && me && message.senderId === me) {
-      const idx = messages.value.findIndex(
-        (m) => m.id === message.clientMessageId,
-      );
-      if (idx >= 0) {
-        const existing = messages.value[idx];
-        if (!existing) {
-          return;
-        }
-
-        messages.value[idx] = {
-          ...existing,
-          id: String(message.id),
-          content:
-            typeof message.content === "string"
-              ? message.content
-              : existing.content,
-          type: (message.type || existing.type) as any,
-          mediaUrl:
-            message.mediaUrl !== undefined
-              ? message.mediaUrl
-              : existing.mediaUrl,
-          mediaMime:
-            message.mediaMime !== undefined
-              ? message.mediaMime
-              : existing.mediaMime,
-          mediaSize:
-            message.mediaSize !== undefined
-              ? message.mediaSize
-              : existing.mediaSize,
-          status: message.status || existing.status,
-          updateTime: message.updateTime || Date.now(),
-        };
-        return;
-      }
-    }
-
-    // 其他情况：如果当前正在跟该好友聊天，则追加
-    const isCurrentConversation =
-      me &&
-      friendId &&
-      ((message.senderId === friendId && message.receiverId === me) ||
-        (message.senderId === me && message.receiverId === friendId));
-
-    if (isCurrentConversation) {
-      messages.value.push({
-        id: String(message.id),
-        senderId: message.senderId,
-        receiverId: message.receiverId,
-        content: message.content,
-        type: (message.type || "text") as any,
-        mediaUrl: message.mediaUrl ?? null,
-        mediaMime: message.mediaMime ?? null,
-        mediaSize: message.mediaSize ?? null,
-        status: (message.status || "delivered") as any,
-        createTime: message.createTime || Date.now(),
-        updateTime: message.updateTime || Date.now(),
-      });
-      void scrollMessagesToBottom("smooth");
-    }
-
-    if (
-      me &&
-      message.receiverId === me &&
-      message.senderId &&
-      message.senderId !== me
-    ) {
-      const incomingFriendId = String(message.senderId);
-      if (!isCurrentConversation) {
-        incrementUnread(incomingFriendId);
-      }
-      const preview =
-        message.type === "image"
-          ? "[图片]"
-          : message.type === "video"
-            ? "[视频]"
-            : String(message.content || "");
-      maybeNotifyDesktop(incomingFriendId, preview);
-    }
+    handleMessageReceive(message);
   });
 });
 </script>
@@ -940,335 +307,6 @@ onMounted(() => {
   height: 100vh;
   display: flex;
   background-color: #f5f5f5;
-}
-
-/* 侧边栏样式 */
-.sidebar {
-  width: 300px;
-  background-color: white;
-  /* border-right: 1px solid #e0e0e0; */
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-header {
-  padding: 20px;
-  border-bottom: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.user-avatar,
-.friend-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background-color: #646cff;
-  color: white;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-weight: bold;
-  font-size: 16px;
-}
-
-.user-avatar {
-  cursor: pointer;
-}
-
-.avatar-image {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.user-details {
-  display: flex;
-  flex-direction: column;
-}
-
-.user-name,
-.friend-name {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.user-status,
-.friend-status {
-  font-size: 12px;
-  color: #666;
-}
-
-.logout-button {
-  padding: 6px 12px;
-  background-color: rgb(239, 148, 158);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.logout-button:hover {
-  background-color: #ff1744;
-}
-
-/* 搜索框样式 */
-.search-box {
-  padding: 15px;
-  /* border-bottom: 1px solid #e0e0e0; */
-}
-
-.search-input {
-  width: 90%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 20px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.3s;
-}
-
-.search-input:focus {
-  border-color: #646cff;
-}
-
-.friend-actions {
-  padding: 12px 15px;
-  border-bottom: none;
-}
-
-.friend-actions-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.friend-request-form {
-  display: flex;
-  gap: 8px;
-}
-
-.friend-request-input {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.friend-request-button {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background-color: #646cff;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.friend-request-button:disabled {
-  background-color: #a5a9ff;
-  cursor: not-allowed;
-}
-
-.friend-request-error {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #d32f2f;
-}
-
-.friend-request-success {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #2e7d32;
-}
-
-.friend-requests {
-  padding: 12px 15px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.friend-requests-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.friend-requests-count {
-  color: #999;
-}
-
-.friend-request-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-}
-
-.friend-request-user {
-  font-size: 14px;
-  color: #333;
-}
-
-.friend-request-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.friend-request-action {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  color: white;
-}
-
-.friend-request-action.accept {
-  background-color: #42b883;
-}
-
-.friend-request-action.reject {
-  background-color: #ff5252;
-}
-
-.friend-request-action:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 好友列表样式 */
-.friend-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 15px;
-}
-
-.friend-list-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 15px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.friend-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  margin-bottom: 8px;
-}
-
-.friend-delete-button {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background-color: rgb(239, 148, 158);
-  color: white;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.friend-delete-button:hover {
-  background-color: #ff1744;
-}
-
-.friend-item:hover {
-  background-color: #f0f0f0;
-}
-
-.friend-item.active {
-  background-color: #e8eaf6;
-}
-
-.unread-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff1744;
-  display: inline-block;
-  margin-left: 8px;
-  animation: unreadPulse 1.4s ease-in-out infinite;
-}
-
-@keyframes unreadPulse {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  60% {
-    transform: scale(1.35);
-    opacity: 0.65;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .unread-dot {
-    animation: none;
-  }
-}
-
-.chat-fade-slide-enter-active,
-.chat-fade-slide-leave-active {
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease;
-}
-
-.chat-fade-slide-enter-from,
-.chat-fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(10px) scale(0.98);
-}
-
-.friend-info {
-  flex: 1;
-}
-
-.status-indicator {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-
-.status-indicator.online {
-  background-color: #4caf50;
-}
-
-.status-indicator.offline {
-  background-color: #9e9e9e;
-}
-
-.status-indicator.busy {
-  background-color: #ff9800;
-}
-
-.status-indicator.away {
-  background-color: #ffc107;
 }
 
 /* 主内容区样式 */
@@ -1305,24 +343,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.chat-header {
-  padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background-color: white;
-}
-
-.chat-header-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 /* 聊天消息区域 */
 .chat-messages {
   flex: 1;
@@ -1334,59 +354,16 @@ onMounted(() => {
   min-height: 0;
 }
 
-/* 聊天输入区域 */
-.chat-input-area {
-  padding: 20px;
-  border-top: 1px solid #e0e0e0;
-  background-color: #fafafa;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+.chat-fade-slide-enter-active,
+.chat-fade-slide-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
 }
 
-.input-wrapper {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-}
-
-.message-input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #ddd;
-  border-radius: 24px;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.4;
-  outline: none;
-  transition: border-color 0.3s;
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-.message-input:focus {
-  border-color: #646cff;
-}
-
-.send-button {
-  padding: 12px 24px;
-  background-color: #646cff;
-  color: white;
-  border: none;
-  border-radius: 24px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.3s;
-  align-self: flex-end;
-}
-
-.send-button:hover:not(:disabled) {
-  background-color: #535bf2;
-}
-
-.send-button:disabled {
-  background-color: #a5a9ff;
-  cursor: not-allowed;
+.chat-fade-slide-enter-from,
+.chat-fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
 }
 </style>
