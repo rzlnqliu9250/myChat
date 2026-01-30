@@ -1,21 +1,60 @@
 /**
  * 认证路由：提供注册与登录接口，登录成功后签发 JWT。
  */
+import type { Request } from "express";
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { supabase } from "../db/supabase";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { verifyTurnstileToken } from "../utils/turnstile";
 
 export const authRouter = Router();
+
+function getRequestIp(req: Request): string | undefined {
+    const cfConnectingIp = req.headers["cf-connecting-ip"];
+    if (typeof cfConnectingIp === "string" && cfConnectingIp.trim()) {
+        return cfConnectingIp.trim();
+    }
+
+    const xForwardedFor = req.headers["x-forwarded-for"];
+    if (typeof xForwardedFor === "string" && xForwardedFor.trim()) {
+        return xForwardedFor.split(",")[0]?.trim() || undefined;
+    }
+
+    if (typeof req.ip === "string" && req.ip.trim()) {
+        return req.ip.trim();
+    }
+
+    return undefined;
+}
+
 //注册接口
 authRouter.post("/register", async (req, res, next) => {
     try {
-        const { username, password, avatarUrl, nickname } = req.body as {
-            username?: string;
-            password?: string;
-            avatarUrl?: string;
-            nickname?: string;
-        };
+        const { username, password, avatarUrl, nickname, turnstileToken } =
+            req.body as {
+                username?: string;
+                password?: string;
+                avatarUrl?: string;
+                nickname?: string;
+                turnstileToken?: string;
+            };
+
+        if (!turnstileToken) {
+            res.status(400).json({ error: "需要完成真人验证" });
+            return;
+        }
+
+        const turnstile = await verifyTurnstileToken(turnstileToken, {
+            remoteIp: getRequestIp(req),
+        });
+        if (!turnstile.ok) {
+            res.status(403).json({
+                error: "真人验证失败",
+                codes: turnstile.errorCodes,
+            });
+            return;
+        }
 
         if (!username || !password) {
             res.status(400).json({
@@ -64,8 +103,19 @@ authRouter.post("/register", async (req, res, next) => {
             return;
         }
 
+        const secret = process.env.JWT_SECRET;
+        if (!secret) {
+            res.status(500).json({ error: "Server misconfigured" });
+            return;
+        }
+
+        const token = jwt.sign({ userId: created.data.id }, secret, {
+            expiresIn: "7d",
+        });
+
         //注册成功：201 + 返回 user 信息
         res.status(201).json({
+            token,
             user: {
                 id: created.data.id,
                 username: created.data.username,
@@ -80,10 +130,27 @@ authRouter.post("/register", async (req, res, next) => {
 //登录接口
 authRouter.post("/login", async (req, res, next) => {
     try {
-        const { username, password } = req.body as {
+        const { username, password, turnstileToken } = req.body as {
             username?: string;
             password?: string;
+            turnstileToken?: string;
         };
+
+        if (!turnstileToken) {
+            res.status(400).json({ error: "需要完成真人验证" });
+            return;
+        }
+
+        const turnstile = await verifyTurnstileToken(turnstileToken, {
+            remoteIp: getRequestIp(req),
+        });
+        if (!turnstile.ok) {
+            res.status(403).json({
+                error: "真人验证失败",
+                codes: turnstile.errorCodes,
+            });
+            return;
+        }
 
         if (!username || !password) {
             res.status(400).json({

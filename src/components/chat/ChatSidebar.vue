@@ -32,36 +32,74 @@
           }}</span>
         </div>
       </div>
-      <button class="logout-button" @click="emit('logout')">退出登录</button>
+      <button class="logout-button" @click="emit('logout')">
+        <span>退出登录</span>
+      </button>
     </div>
 
     <!-- 搜索框 -->
     <div class="search-box">
-      <input
-        type="text"
-        placeholder="搜索好友..."
-        :value="searchQuery"
-        class="search-input"
-        @input="onSearchInput"
-      />
+      <div class="form-control search-control">
+        <input
+          type="text"
+          placeholder="输入好友账号或昵称"
+          :value="searchQuery"
+          class="search-input"
+          @input="onSearchInput"
+        />
+        <label>
+          <span
+            v-for="(ch, i) in searchLabel"
+            :key="`${ch}-${i}`"
+            :style="{ transitionDelay: `${i * 50}ms` }"
+            >{{ ch }}</span
+          >
+        </label>
+      </div>
     </div>
 
     <div class="friend-actions">
-      <div class="friend-actions-title">添加好友</div>
       <div class="friend-request-form">
-        <input
-          :value="friendRequestUsername"
-          class="friend-request-input"
-          placeholder="输入对方用户名"
-          type="text"
-          @input="onFriendRequestUsernameInput"
-        />
+        <div class="form-control friend-request-control">
+          <input
+            :value="friendRequestUsername"
+            class="friend-request-input"
+            placeholder="输入对方账号"
+            type="text"
+            required
+            @input="onFriendRequestUsernameInput"
+          />
+          <label>
+            <span
+              v-for="(ch, i) in friendRequestLabel"
+              :key="`${ch}-${i}`"
+              :style="{ transitionDelay: `${i * 50}ms` }"
+              >{{ ch }}</span
+            >
+          </label>
+        </div>
         <button
           class="friend-request-button"
           :disabled="friendRequestLoading || !friendRequestUsername"
           @click="emit('sendFriendRequest')"
         >
-          发送
+          <div class="svg-wrapper-1">
+            <div class="svg-wrapper">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+              >
+                <path fill="none" d="M0 0h24v24H0z"></path>
+                <path
+                  fill="currentColor"
+                  d="M1.946 9.315c-.522-.174-.527-.455.01-.634l19.087-6.362c.529-.176.832.12.684.638l-5.454 19.086c-.15.529-.455.547-.679.045L12 14l6-8-8 6-8.054-2.685z"
+                ></path>
+              </svg>
+            </div>
+          </div>
+          <span>发送</span>
         </button>
       </div>
       <div v-if="friendRequestError" class="friend-request-error">
@@ -141,7 +179,7 @@
           class="friend-delete-button"
           @click.stop="emit('deleteFriend', friend)"
         >
-          删除
+          <span>删除</span>
         </button>
       </div>
     </div>
@@ -188,6 +226,9 @@ const emit = defineEmits<{
 }>();
 
 const avatarInput = ref<HTMLInputElement | null>(null);
+
+const searchLabel = "搜索好友".split("");
+const friendRequestLabel = "添加好友".split("");
 
 const triggerAvatarPick = () => {
   avatarInput.value?.click();
@@ -287,36 +328,117 @@ const onFriendRequestUsernameInput = (e: Event) => {
 }
 
 .logout-button {
+  background: transparent;
+  position: relative;
   padding: 6px 12px;
-  background-color: rgb(239, 148, 158);
-  color: white;
-  border: none;
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
   font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.3s;
+  border: 1px solid rgb(239, 148, 158);
+  border-radius: 25px;
+  outline: none;
+  overflow: hidden;
+  color: rgb(239, 148, 158);
+  transition: color 0.3s 0.1s ease-out;
+  text-align: center;
+  z-index: 0;
+}
+
+.logout-button span {
+  margin: 0;
+}
+
+.logout-button::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  content: "";
+  border-radius: 50%;
+  display: block;
+  width: 20em;
+  height: 20em;
+  left: -5em;
+  text-align: center;
+  transition: box-shadow 0.5s ease-out;
+  z-index: -1;
 }
 
 .logout-button:hover {
-  background-color: #ff1744;
+  color: #fff;
+  border: 1px solid #ff1744;
+}
+
+.logout-button:hover::before {
+  box-shadow: inset 0 0 0 10em #ff1744;
 }
 
 .search-box {
-  padding: 15px;
+  padding: 12px 15px;
 }
 
 .search-input {
-  width: 90%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 20px;
+  background-color: transparent;
+  border: 0;
+  border-bottom: 2px #f5f5f5 solid;
+  display: block;
+  width: 100%;
+  padding: 13px 0 7px;
   font-size: 14px;
+  color: #222;
   outline: none;
-  transition: border-color 0.3s;
+  box-shadow: none;
 }
 
-.search-input:focus {
-  border-color: #0001f0;
+.search-input::placeholder {
+  color: #9aa0a6;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.search-input:focus::placeholder {
+  opacity: 1;
+  transition-delay: 0.4s;
+}
+
+.form-control.search-control {
+  position: relative;
+  width: 100%;
+  margin: 0;
+}
+
+.form-control.search-control .search-input:focus,
+.form-control.search-control .search-input:not(:placeholder-shown) {
+  border-bottom-color: #111;
+}
+
+.form-control.search-control label {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  pointer-events: none;
+}
+
+.form-control.search-control label span {
+  display: inline-block;
+  font-size: 14px;
+  min-width: 5px;
+  color: #666;
+  transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.form-control.search-control .search-input:focus + label span,
+.form-control.search-control
+  .search-input:not(:placeholder-shown)
+  + label
+  span {
+  color: #111;
+  transform: translateY(-30px);
 }
 
 .friend-actions {
@@ -324,39 +446,124 @@ const onFriendRequestUsernameInput = (e: Event) => {
   border-bottom: none;
 }
 
-.friend-actions-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 8px;
-}
-
 .friend-request-form {
   display: flex;
   gap: 8px;
 }
 
-.friend-request-input {
+.form-control.friend-request-control {
+  position: relative;
   flex: 1;
-  padding: 8px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.friend-request-input {
+  background-color: transparent;
+  border: 0;
+  border-bottom: 2px #f5f5f5 solid;
+  display: block;
+  width: 100%;
+  padding: 13px 0 7px;
   font-size: 14px;
+  color: #222;
+}
+
+.friend-request-input::placeholder {
+  color: #9aa0a6;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.friend-request-input:focus::placeholder {
+  opacity: 1;
+  transition-delay: 0.4s;
+}
+
+.form-control.friend-request-control .friend-request-input:focus,
+.form-control.friend-request-control .friend-request-input:valid {
+  outline: 0;
+  border-bottom-color: #111;
+}
+
+.form-control.friend-request-control label {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  pointer-events: none;
+}
+
+.form-control.friend-request-control label span {
+  display: inline-block;
+  font-size: 14px;
+  min-width: 5px;
+  color: #666;
+  transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.form-control.friend-request-control .friend-request-input:focus + label span,
+.form-control.friend-request-control .friend-request-input:valid + label span {
+  color: #111;
+  transform: translateY(-30px);
 }
 
 .friend-request-button {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background-color: #0001f0;
+  font-family: inherit;
+  font-size: 13px;
+  background: #0001f0;
   color: white;
+  padding: 0.45em 0.75em;
+  padding-left: 0.7em;
+  display: flex;
+  align-items: center;
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.2s;
   cursor: pointer;
-  font-size: 14px;
+}
+
+.friend-request-button span {
+  display: block;
+  margin-left: 0.3em;
+  transition: all 0.3s ease-in-out;
+}
+
+.friend-request-button svg {
+  display: block;
+  transform-origin: center center;
+  transition: transform 0.3s ease-in-out;
+}
+
+.friend-request-button:hover:not(:disabled) .svg-wrapper {
+  animation: fly-1 0.6s ease-in-out infinite alternate;
+}
+
+.friend-request-button:hover:not(:disabled) svg {
+  transform: translateX(0.95em) rotate(45deg) scale(1.08);
+}
+
+.friend-request-button:hover:not(:disabled) span {
+  transform: translateX(3.4em);
+}
+
+.friend-request-button:active {
+  transform: scale(0.95);
 }
 
 .friend-request-button:disabled {
   background-color: #a5a9ff;
   cursor: not-allowed;
+}
+
+@keyframes fly-1 {
+  from {
+    transform: translateY(0.1em);
+  }
+
+  to {
+    transform: translateY(-0.1em);
+  }
 }
 
 .friend-request-error {
@@ -454,17 +661,54 @@ const onFriendRequestUsernameInput = (e: Event) => {
 }
 
 .friend-delete-button {
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background-color: rgb(239, 148, 158);
-  color: white;
-  cursor: pointer;
+  background: transparent;
+  position: relative;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
   font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid rgb(239, 148, 158);
+  border-radius: 25px;
+  outline: none;
+  overflow: hidden;
+  color: rgb(239, 148, 158);
+  transition: color 0.3s 0.1s ease-out;
+  text-align: center;
+  z-index: 0;
+}
+
+.friend-delete-button span {
+  margin: 0;
+}
+
+.friend-delete-button::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  content: "";
+  border-radius: 50%;
+  display: block;
+  width: 20em;
+  height: 20em;
+  left: -5em;
+  text-align: center;
+  transition: box-shadow 0.5s ease-out;
+  z-index: -1;
 }
 
 .friend-delete-button:hover {
-  background-color: #ff1744;
+  color: #fff;
+  border: 1px solid #ff1744;
+}
+
+.friend-delete-button:hover::before {
+  box-shadow: inset 0 0 0 10em #ff1744;
 }
 
 .friend-item:hover {

@@ -36,50 +36,81 @@
             </button>
           </div>
         </div>
-        <div class="form-group">
-          <label for="username" class="form-label">账号</label>
+        <div class="form-control">
           <input
             type="text"
             id="username"
             v-model="form.username"
-            placeholder="请输入账号"
             class="form-input"
+            :class="{ filled: !!form.username }"
             required
           />
+          <label>
+            <span
+              v-for="(ch, i) in registerUsernameLabel"
+              :key="`${ch}-${i}`"
+              :style="{ transitionDelay: `${i * 50}ms` }"
+              >{{ ch }}</span
+            >
+          </label>
         </div>
-        <div class="form-group">
-          <label for="nickname" class="form-label">昵称</label>
+
+        <div class="form-control">
           <input
             type="text"
             id="nickname"
             v-model="form.nickname"
-            placeholder="请输入昵称"
             class="form-input"
+            :class="{ filled: !!form.nickname }"
             required
           />
+          <label>
+            <span
+              v-for="(ch, i) in registerNicknameLabel"
+              :key="`${ch}-${i}`"
+              :style="{ transitionDelay: `${i * 50}ms` }"
+              >{{ ch }}</span
+            >
+          </label>
         </div>
-        <div class="form-group">
-          <label for="password" class="form-label">密码</label>
+
+        <div class="form-control">
           <input
             type="password"
             id="password"
             v-model="form.password"
-            placeholder="请输入密码（至少6位）"
             class="form-input"
+            :class="{ filled: !!form.password }"
             required
             minlength="6"
           />
+          <label>
+            <span
+              v-for="(ch, i) in registerPasswordLabel"
+              :key="`${ch}-${i}`"
+              :style="{ transitionDelay: `${i * 50}ms` }"
+              >{{ ch }}</span
+            >
+          </label>
         </div>
-        <div class="form-group">
-          <label for="confirmPassword" class="form-label">确认密码</label>
+
+        <div class="form-control">
           <input
             type="password"
             id="confirmPassword"
             v-model="form.confirmPassword"
-            placeholder="请再次输入密码"
             class="form-input"
+            :class="{ filled: !!form.confirmPassword }"
             required
           />
+          <label>
+            <span
+              v-for="(ch, i) in registerConfirmPasswordLabel"
+              :key="`${ch}-${i}`"
+              :style="{ transitionDelay: `${i * 50}ms` }"
+              >{{ ch }}</span
+            >
+          </label>
           <p
             v-if="form.password !== form.confirmPassword"
             class="error-message"
@@ -87,19 +118,32 @@
             两次输入的密码不一致
           </p>
         </div>
+
         <button
           type="submit"
           class="register-button"
           :class="{ loading }"
-          :disabled="loading || form.password !== form.confirmPassword"
+          :disabled="
+            loading || form.password !== form.confirmPassword || !turnstileToken
+          "
         >
-          注册
+          <span class="button-text">注册</span>
         </button>
-        <div class="form-footer">
-          <p>
-            已有账号？
-            <router-link to="/login" class="login-link">立即登录</router-link>
-          </p>
+
+        <div class="footer-turnstile-row">
+          <div class="form-footer">
+            <p>
+              已有账号？<br />
+              <router-link to="/login" class="login-link">立即登录</router-link>
+            </p>
+          </div>
+
+          <div class="turnstile-row">
+            <div ref="turnstileEl" class="turnstile-widget"></div>
+            <p v-if="turnstileError" class="turnstile-error">
+              {{ turnstileError }}
+            </p>
+          </div>
         </div>
       </form>
     </div>
@@ -114,6 +158,25 @@ import { useWebSocket } from "../composables/useWebSocket";
 import { apiPost, apiRequest } from "../services/api";
 import { animate, stagger, splitText } from "animejs";
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "expired-callback"?: () => void;
+          "error-callback"?: () => void;
+          appearance?: "always" | "execute" | "interaction-only";
+        },
+      ) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
+
 const router = useRouter();
 const userStore = useUserStore();
 const { connect, wsManager } = useWebSocket();
@@ -127,9 +190,79 @@ const form = ref({
   confirmPassword: "",
 });
 
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as
+  | string
+  | undefined;
+const turnstileEl = ref<HTMLElement | null>(null);
+const turnstileToken = ref<string | null>(null);
+const turnstileError = ref<string | null>(null);
+let turnstileWidgetId: string | null = null;
+
+const registerUsernameLabel = "账号".split("");
+const registerNicknameLabel = "昵称".split("");
+const registerPasswordLabel = "密码".split("");
+const registerConfirmPasswordLabel = "确认密码".split("");
+
 const avatarInput = ref<HTMLInputElement | null>(null);
 const avatarFile = ref<File | null>(null);
 const avatarPreview = ref<string | null>(null);
+
+const waitForTurnstile = async (): Promise<
+  NonNullable<Window["turnstile"]>
+> => {
+  const start = Date.now();
+  while (!window.turnstile) {
+    if (Date.now() - start > 8000) {
+      throw new Error("Turnstile 脚本加载超时");
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return window.turnstile;
+};
+
+const renderTurnstile = async (): Promise<void> => {
+  if (!turnstileSiteKey) {
+    turnstileError.value = "缺少 Turnstile Site Key";
+    return;
+  }
+  if (!turnstileEl.value) {
+    return;
+  }
+
+  if (turnstileWidgetId && window.turnstile) {
+    try {
+      window.turnstile.reset(turnstileWidgetId);
+    } catch {
+      // ignore
+    }
+    return;
+  }
+
+  try {
+    const turnstile = await waitForTurnstile();
+    turnstileEl.value.innerHTML = "";
+    turnstileToken.value = null;
+    turnstileError.value = null;
+    turnstileWidgetId = turnstile.render(turnstileEl.value, {
+      sitekey: turnstileSiteKey,
+      callback: (token: string) => {
+        turnstileToken.value = token;
+        turnstileError.value = null;
+      },
+      "expired-callback": () => {
+        turnstileToken.value = null;
+      },
+      "error-callback": () => {
+        turnstileToken.value = null;
+        turnstileError.value = "验证组件加载失败，请刷新重试";
+      },
+    });
+  } catch (err) {
+    turnstileToken.value = null;
+    turnstileError.value =
+      err instanceof Error ? err.message : "验证组件初始化失败";
+  }
+};
 
 const triggerAvatarPick = (): void => {
   avatarInput.value?.click();
@@ -181,12 +314,22 @@ onMounted(async () => {
     loopDelay: 1000,
     loop: true,
   });
+
+  await renderTurnstile();
 });
 onUnmounted(() => {
   try {
     titleAnimation?.pause?.();
   } catch {
     // ignore
+  }
+
+  if (turnstileWidgetId && window.turnstile) {
+    try {
+      window.turnstile.remove(turnstileWidgetId);
+    } catch {
+      // ignore
+    }
   }
 
   if (avatarPreview.value) {
@@ -199,6 +342,11 @@ onUnmounted(() => {
 });
 const handleRegister = async () => {
   if (form.value.password !== form.value.confirmPassword) {
+    return;
+  }
+
+  if (!turnstileToken.value) {
+    turnstileError.value = "请先完成真人验证";
     return;
   }
 
@@ -218,7 +366,8 @@ const handleRegister = async () => {
       avatarUrl = uploaded.url;
     }
 
-    await apiPost<{
+    const registerData = await apiPost<{
+      token: string;
       user: {
         id: string;
         username: string;
@@ -230,32 +379,20 @@ const handleRegister = async () => {
       nickname: form.value.nickname,
       password: form.value.password,
       avatarUrl,
-    });
-
-    const loginData = await apiPost<{
-      token: string;
-      user: {
-        id: string;
-        username: string;
-        nickname: string;
-        avatarUrl?: string | null;
-      };
-    }>("/api/login", {
-      username: form.value.username,
-      password: form.value.password,
+      turnstileToken: turnstileToken.value,
     });
 
     userStore.setCurrentUser({
-      id: loginData.user.id,
-      username: loginData.user.username,
-      nickname: loginData.user.nickname || loginData.user.username,
-      avatar: loginData.user.avatarUrl || undefined,
+      id: registerData.user.id,
+      username: registerData.user.username,
+      nickname: registerData.user.nickname || registerData.user.username,
+      avatar: registerData.user.avatarUrl || undefined,
       status: "online" as const,
       lastOnline: Date.now(),
     });
-    userStore.setToken(loginData.token);
+    userStore.setToken(registerData.token);
 
-    wsManager.setToken(loginData.token);
+    wsManager.setToken(registerData.token);
 
     // 连接WebSocket
     await connect();
@@ -264,6 +401,15 @@ const handleRegister = async () => {
     router.push("/chat");
   } catch (error) {
     console.error("注册失败:", error);
+    turnstileError.value = "注册失败，请重新完成验证";
+    turnstileToken.value = null;
+    if (turnstileWidgetId && window.turnstile) {
+      try {
+        window.turnstile.reset(turnstileWidgetId);
+      } catch {
+        // ignore
+      }
+    }
   } finally {
     loading.value = false;
   }
@@ -283,16 +429,67 @@ const handleRegister = async () => {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  background-color: #f5f5f5;
+  position: relative;
+  overflow: hidden;
+  color: #111;
+  background:
+    radial-gradient(
+      900px circle at 18% 18%,
+      rgba(66, 184, 131, 0.16),
+      transparent 60%
+    ),
+    radial-gradient(
+      720px circle at 85% 28%,
+      rgba(1, 166, 73, 0.12),
+      transparent 58%
+    ),
+    radial-gradient(
+      800px circle at 50% 95%,
+      rgba(17, 17, 17, 0.05),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f3fbf7 100%);
+}
+
+.register-container::before,
+.register-container::after {
+  content: "";
+  position: absolute;
+  inset: -40% -30%;
+  background: radial-gradient(
+    closest-side,
+    rgba(66, 184, 131, 0.18),
+    transparent 70%
+  );
+  filter: blur(28px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.register-container::after {
+  inset: -30% -40%;
+  background: radial-gradient(
+    closest-side,
+    rgba(1, 166, 73, 0.16),
+    transparent 70%
+  );
+  opacity: 0.5;
+}
+
+#animation,
+.register-form-wrapper {
+  position: relative;
+  z-index: 1;
 }
 
 .register-form-wrapper {
   width: 100%;
-  max-width: 400px;
-  background-color: white;
+  max-width: 420px;
+  background-color: rgba(255, 255, 255, 0.82);
   padding: 30px;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
 }
 
 .register-title {
@@ -323,7 +520,8 @@ const handleRegister = async () => {
 
 .form-input {
   padding: 12px;
-  border: 1px solid #ddd;
+  border: none;
+  border-bottom: 1px solid #ddd;
   border-radius: 4px;
   font-size: 16px;
   transition: border-color 0.3s;
@@ -332,7 +530,51 @@ const handleRegister = async () => {
 .form-input:focus {
   outline: none;
   border-color: #0001f0;
-  box-shadow: 0 0 0 2px rgba(0, 125, 255, 0.1);
+  box-shadow: none;
+}
+
+.form-control {
+  position: relative;
+  width: 100%;
+  margin: 0;
+}
+
+.form-control .form-input {
+  background-color: transparent;
+  border: 0;
+  border-bottom: 2px #f5f5f5 solid;
+  display: block;
+  width: 100%;
+  padding: 20px 0 10px;
+  font-size: 18px;
+  color: #222;
+}
+
+.form-control .form-input:focus,
+.form-control .form-input.filled {
+  outline: 0;
+  border-bottom-color: #111;
+}
+
+.form-control label {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  pointer-events: none;
+}
+
+.form-control label span {
+  display: inline-block;
+  font-size: 18px;
+  min-width: 5px;
+  color: #666;
+  transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.form-control .form-input:focus + label span,
+.form-control .form-input.filled + label span {
+  color: #111;
+  transform: translateY(-35px);
 }
 
 .avatar-row {
@@ -365,24 +607,87 @@ const handleRegister = async () => {
 }
 
 .avatar-pick-button {
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: #fff;
+  font-size: 17px;
+  background: transparent;
+  border: none;
+  padding: 1em 1.5em;
+  color: #666;
+  text-transform: uppercase;
+  position: relative;
+  transition: 0.5s ease;
   cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden; /* 关键：隐藏超出圆角的部分 */
+}
+
+.avatar-pick-button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background-color: #def2e9;
+  transition: 0.5s ease;
+  border-radius: 10px; /* 添加圆角 */
+}
+
+.avatar-pick-button:hover {
+  color: #1e1e2b;
+  transition-delay: 0.5s;
+}
+
+.avatar-pick-button:hover::before {
+  width: 100%;
+}
+
+.avatar-pick-button::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0;
+  width: 100%;
+  background-color: #def2e9;
+  transition: 0.4s ease;
+  z-index: -1;
+  border-radius: 10px; /* 添加圆角 */
+}
+
+.avatar-pick-button:hover::after {
+  height: 100%;
+  transition-delay: 0.4s;
+  color: aliceblue;
 }
 
 .register-button {
-  padding: 14px;
-  background-color: #42b883;
-  color: white;
+  background-color: rgba(66, 184, 131, 0.14);
+  color: #42b883;
   border: none;
-  border-radius: 4px;
+  cursor: pointer;
+  border-radius: 8px;
+  width: 100%;
+  height: 45px;
+  transition: 0.3s;
   font-size: 16px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.3s;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.register-button.loading {
+  background-color: #42b883;
+  color: #fff;
+}
+
+.register-button .button-text {
+  transition: opacity 0.2s ease;
+}
+
+.register-button.loading .button-text {
+  opacity: 0;
 }
 
 .register-button.loading::first-line {
@@ -412,6 +717,8 @@ const handleRegister = async () => {
 
 .register-button:hover:not(:disabled) {
   background-color: #01a649;
+  box-shadow: 0 0 0 5px rgba(1, 166, 73, 0.37);
+  color: #fff;
 }
 
 .register-button:disabled {
@@ -428,10 +735,32 @@ const handleRegister = async () => {
 }
 
 .form-footer {
-  margin-top: 10px;
-  text-align: center;
+  margin-top: 0;
+  text-align: left;
   font-size: 14px;
   color: #666;
+}
+
+.footer-turnstile-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-turnstile-row .form-footer {
+  flex: 1;
+}
+
+.footer-turnstile-row .turnstile-row {
+  margin-top: 0;
+  flex: 1;
+  align-items: flex-end;
+}
+
+.footer-turnstile-row .turnstile-widget {
+  justify-content: flex-end;
 }
 
 .login-link {
@@ -444,5 +773,26 @@ const handleRegister = async () => {
 .login-link:hover {
   color: #01a649;
   text-decoration: underline;
+}
+
+.turnstile-row {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.turnstile-widget {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.turnstile-error {
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 12px;
+  color: #ff5252;
+  text-align: center;
 }
 </style>

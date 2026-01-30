@@ -8,14 +8,41 @@
         style="display: none"
         @change="handleFileChange"
       />
-      <button
-        type="button"
-        class="media-button"
-        @click="triggerPick"
-        :disabled="disabled"
-      >
-        +
-      </button>
+      <div class="tooltip-container" :class="{ 'is-disabled': disabled }">
+        <button
+          type="button"
+          class="media-button"
+          @click="triggerPick"
+          :disabled="disabled"
+        >
+          <svg
+            class="media-icon"
+            height="30"
+            width="30"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 7v10"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.25"
+              stroke-linecap="round"
+            />
+            <path
+              d="M7 12h10"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.25"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <div class="tooltip-bubble" role="tooltip">
+          <p class="tooltip-text">发送图片或视频</p>
+        </div>
+      </div>
       <textarea
         v-model="message"
         placeholder="输入消息..."
@@ -29,7 +56,23 @@
         @click="handleSend"
         :disabled="!message.trim() || disabled"
       >
-        发送
+        <div class="svg-wrapper-1">
+          <div class="svg-wrapper">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              width="24"
+              height="24"
+            >
+              <path fill="none" d="M0 0h24v24H0z"></path>
+              <path
+                fill="currentColor"
+                d="M1.946 9.315c-.522-.174-.527-.455.01-.634l19.087-6.362c.529-.176.832.12.684.638l-5.454 19.086c-.15.529-.455.547-.679.045L12 14l6-8-8 6-8.054-2.685z"
+              ></path>
+            </svg>
+          </div>
+        </div>
+        <span>发送</span>
       </button>
     </div>
   </div>
@@ -87,8 +130,7 @@ const handleFileChange = (e: Event) => {
 <style scoped>
 .chat-input-container {
   padding: 20px;
-  border-top: 1px solid #e0e0e0;
-  background-color: #fafafa;
+  background-color: #fff;
 }
 
 .input-wrapper {
@@ -109,7 +151,6 @@ const handleFileChange = (e: Event) => {
   border: 1px solid #ddd;
   background: #fff;
   color: #555;
-  font-size: 22px;
   cursor: pointer;
   flex-shrink: 0;
   flex-grow: 0;
@@ -138,6 +179,61 @@ const handleFileChange = (e: Event) => {
   opacity: 0.6;
 }
 
+.media-icon {
+  transition: transform 0.5s;
+}
+
+.tooltip-container {
+  position: relative;
+  flex-shrink: 0;
+  flex-grow: 0;
+}
+
+.tooltip-container:hover:not(.is-disabled) .media-icon {
+  transform: rotate(360deg) scale(1.1);
+}
+
+.tooltip-bubble {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: auto;
+  min-width: 140px;
+  transform: translateY(0);
+  border-radius: 8px;
+  background: #9aa0a6;
+  padding: 10px 12px;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.tooltip-bubble::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  background: #9aa0a6;
+}
+
+.tooltip-text {
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  color: #fff;
+}
+
+.tooltip-container:hover:not(.is-disabled) .tooltip-bubble {
+  opacity: 1;
+  transform: translateY(-52px);
+}
+
 .message-input {
   flex: 1;
   padding: 12px 16px;
@@ -163,25 +259,63 @@ const handleFileChange = (e: Event) => {
 }
 
 .send-button {
-  padding: 12px 24px;
-  background-color: #0001f0;
-  color: white;
-  border: none;
-  border-radius: 24px;
+  font-family: inherit;
   font-size: 14px;
-  font-weight: 600;
+  background: #0001f0;
+  color: white;
+  padding: 0.7em 1em;
+  padding-left: 0.9em;
+  display: flex;
+  align-items: center;
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.2s;
   cursor: pointer;
-  transition: background-color 0.3s;
   align-self: flex-end;
   white-space: nowrap;
 }
 
-.send-button:hover:not(:disabled) {
-  background-color: #0001f0;
+.send-button span {
+  display: block;
+  margin-left: 0.3em;
+  transition: all 0.3s ease-in-out;
+}
+
+.send-button svg {
+  display: block;
+  transform-origin: center center;
+  transition: transform 0.3s ease-in-out;
+}
+
+.send-button:hover:not(:disabled) .svg-wrapper {
+  animation: fly-1 0.6s ease-in-out infinite alternate;
+}
+
+.send-button:hover:not(:disabled) svg {
+  transform: translateX(1.2em) rotate(45deg) scale(1.1);
+}
+
+.send-button:hover:not(:disabled) span {
+  transform: translateX(5em);
+}
+
+.send-button:active {
+  transform: scale(0.95);
 }
 
 .send-button:disabled {
   background-color: #a5a9ff;
   cursor: not-allowed;
+}
+
+@keyframes fly-1 {
+  from {
+    transform: translateY(0.1em);
+  }
+
+  to {
+    transform: translateY(-0.1em);
+  }
 }
 </style>
