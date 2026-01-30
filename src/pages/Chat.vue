@@ -1,5 +1,17 @@
 <template>
   <div class="chat-container">
+    <ConfirmCards
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :confirm-text="confirmConfirmText"
+      :cancel-text="confirmCancelText"
+      :confirm-color="confirmConfirmColor"
+      :cancel-color="confirmCancelColor"
+      @confirm="handleConfirmOk"
+      @cancel="handleConfirmCancel"
+    />
+
     <chat-sidebar
       :current-user="currentUser"
       v-model:searchQuery="searchQuery"
@@ -67,6 +79,7 @@ import MessageBubble from "../components/chat/MessageBubble.vue";
 import ChatInput from "../components/chat/ChatInput.vue";
 import ChatSidebar from "../components/chat/ChatSidebar.vue";
 import ChatHeader from "../components/chat/ChatHeader.vue";
+import ConfirmCards from "../components/ui/ConfirmCards.vue";
 import { apiDelete } from "../services/api";
 import { useAvatarUpload } from "../composables/chat/useAvatarUpload";
 import { useDesktopNotify } from "../composables/chat/useDesktopNotify";
@@ -181,15 +194,51 @@ const setFriendStatus = (
   setStoreFriends(friends.value);
 };
 
-const handleDeleteFriend = async (friend: UiFriend) => {
+type ConfirmAction = "logout" | "deleteFriend";
+
+const confirmOpen = ref(false);
+const confirmTitle = ref("");
+const confirmMessage = ref("");
+const confirmConfirmText = ref("确认");
+const confirmCancelText = ref("取消");
+const confirmConfirmColor = ref<"red" | "blue" | "green">("green");
+const confirmCancelColor = ref<"red" | "blue" | "green">("blue");
+
+let pendingConfirmAction: ConfirmAction | null = null;
+let pendingFriendToDelete: UiFriend | null = null;
+
+const openConfirm = (payload: {
+  action: ConfirmAction;
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  confirmColor: "red" | "blue" | "green";
+  cancelColor: "red" | "blue" | "green";
+}) => {
+  pendingConfirmAction = payload.action;
+  confirmTitle.value = payload.title;
+  confirmMessage.value = payload.message;
+  confirmConfirmText.value = payload.confirmText;
+  confirmCancelText.value = payload.cancelText;
+  confirmConfirmColor.value = payload.confirmColor;
+  confirmCancelColor.value = payload.cancelColor;
+  confirmOpen.value = true;
+};
+
+const closeConfirm = () => {
+  confirmOpen.value = false;
+  pendingConfirmAction = null;
+  pendingFriendToDelete = null;
+};
+
+const handleConfirmCancel = () => {
+  closeConfirm();
+};
+
+const confirmDeleteFriend = async (friend: UiFriend) => {
   const token = userStore.token;
   if (!token) {
-    return;
-  }
-
-  const name = friend.nickname || friend.username;
-  const confirmed = window.confirm(`确定删除好友「${name}」吗？`);
-  if (!confirmed) {
     return;
   }
 
@@ -208,10 +257,52 @@ const handleDeleteFriend = async (friend: UiFriend) => {
   }
 };
 
+const handleConfirmOk = async () => {
+  const action = pendingConfirmAction;
+  const friend = pendingFriendToDelete;
+  closeConfirm();
+
+  if (action === "logout") {
+    userStore.logout();
+    router.push("/login");
+    return;
+  }
+
+  if (action === "deleteFriend" && friend) {
+    await confirmDeleteFriend(friend);
+  }
+};
+
+const handleDeleteFriend = async (friend: UiFriend) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const name = friend.nickname || friend.username;
+  pendingFriendToDelete = friend;
+  openConfirm({
+    action: "deleteFriend",
+    title: "删除好友",
+    message: `确定删除好友「${name}」吗？`,
+    confirmText: "确定删除",
+    cancelText: "取消",
+    confirmColor: "red",
+    cancelColor: "blue",
+  });
+};
+
 // 退出登录
 const handleLogout = () => {
-  userStore.logout();
-  router.push("/login");
+  openConfirm({
+    action: "logout",
+    title: "退出登录",
+    message: "确定要退出登录吗？",
+    confirmText: "退出登录",
+    cancelText: "取消",
+    confirmColor: "red",
+    cancelColor: "blue",
+  });
 };
 
 // 组件挂载时的初始化
