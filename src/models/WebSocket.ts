@@ -10,6 +10,7 @@ export const WebSocketEvent = {
 
   // 业务事件
   MESSAGE_RECEIVE: "message_receive",
+  GROUP_MEMBERSHIP_CHANGED: "group_membership_changed",
   USER_ONLINE: "user_online",
   USER_OFFLINE: "user_offline",
   FRIEND_REQUEST_CREATED: "friend_request_created",

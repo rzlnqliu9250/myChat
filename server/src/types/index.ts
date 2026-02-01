@@ -11,6 +11,7 @@ export enum WebSocketEvent {
 
     // 业务事件
     MESSAGE_RECEIVE = "message_receive", //收消息
+    GROUP_MEMBERSHIP_CHANGED = "group_membership_changed", //群成员变更
     USER_ONLINE = "user_online", //上线
     USER_OFFLINE = "user_offline", //下线
     FRIEND_REQUEST_CREATED = "friend_request_created", //好友申请创建

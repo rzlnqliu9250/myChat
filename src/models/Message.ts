@@ -16,7 +16,10 @@ export type MessageStatusValue =
 export interface Message {
   id: string;
   senderId: string;
-  receiverId: string;
+  senderNickname?: string | null;
+  senderAvatarUrl?: string | null;
+  receiverId: string | null;
+  groupId?: string | null;
   content: string;
   type: "text" | "image" | "video" | "file" | "system";
   mediaUrl?: string | null;

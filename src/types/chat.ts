@@ -14,6 +14,14 @@ export type UiFriend = {
   status: "online" | "offline";
 };
 
+export type UiGroup = {
+  id: string;
+  name: string;
+  ownerId: string;
+  avatarUrl: string | null;
+  createdAt: string;
+};
+
 export type IncomingRequest = {
   id: string;
   fromUser: {

@@ -1,13 +1,14 @@
 import { ref, type ComputedRef, type Ref } from "vue";
 import { apiGet, apiRequest } from "../../services/api";
 import type { Message } from "../../models/Message";
-import type { UiFriend } from "../../types/chat";
+import type { UiFriend, UiGroup } from "../../types/chat";
 import { WebSocketEvent } from "../../models/WebSocket";
 
 export function useChatMessages(options: {
   getToken: () => string | null;
   currentUser: ComputedRef<{ id: string } | null>;
   selectedFriend: Ref<UiFriend | null>;
+  selectedGroup: Ref<UiGroup | null>;
   friends: Ref<UiFriend[]>;
   scrollMessagesToBottom: (behavior?: ScrollBehavior) => Promise<void>;
   incrementUnread: (friendId: string) => void;
@@ -26,7 +27,10 @@ export function useChatMessages(options: {
       messages: {
         id: string;
         senderId: string;
-        receiverId: string;
+        senderNickname?: string | null;
+        senderAvatarUrl?: string | null;
+        receiverId: string | null;
+        groupId?: string | null;
         content: string;
         type?: string;
         mediaUrl?: string | null;
@@ -49,7 +53,69 @@ export function useChatMessages(options: {
       return {
         id: m.id,
         senderId: m.senderId,
-        receiverId: m.receiverId,
+        receiverId: m.receiverId ?? null,
+        groupId: (m as any).groupId ?? null,
+        content: m.content,
+        type: ((m.type as any) || "text") as any,
+        mediaUrl: m.mediaUrl ?? null,
+        mediaMime: m.mediaMime ?? null,
+        mediaSize: m.mediaSize ?? null,
+        status: m.isRead ? ("read" as const) : ("delivered" as const),
+        createTime: ts,
+        updateTime: ts,
+      } satisfies Message;
+    });
+
+    void options.scrollMessagesToBottom();
+  };
+
+  const fetchGroupMessages = async (groupId: string): Promise<void> => {
+    const token = options.getToken();
+    if (!token) {
+      return;
+    }
+
+    let data: {
+      messages: {
+        id: string;
+        senderId: string;
+        receiverId: string | null;
+        groupId?: string | null;
+        content: string;
+        type?: string;
+        mediaUrl?: string | null;
+        mediaMime?: string | null;
+        mediaSize?: number | null;
+        isRead: boolean;
+        createdAt: string;
+      }[];
+    };
+
+    try {
+      data = await apiGet<typeof data>(
+        `/api/groups/${groupId}/messages`,
+        token,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      throw new Error(msg && msg !== "请求失败" ? msg : "加载群消息失败");
+    }
+
+    messages.value = (data.messages || []).map((m) => {
+      const ts = new Date(m.createdAt).getTime();
+      return {
+        id: m.id,
+        senderId: m.senderId,
+        senderNickname:
+          (m as any).senderNickname !== undefined
+            ? (m as any).senderNickname
+            : null,
+        senderAvatarUrl:
+          (m as any).senderAvatarUrl !== undefined
+            ? (m as any).senderAvatarUrl
+            : null,
+        receiverId: null,
+        groupId: (m as any).groupId ?? groupId,
         content: m.content,
         type: ((m.type as any) || "text") as any,
         mediaUrl: m.mediaUrl ?? null,
@@ -66,39 +132,67 @@ export function useChatMessages(options: {
 
   const handleSendMessage = (content: string): void => {
     const me = options.currentUser.value;
+    if (!me) {
+      return;
+    }
+
+    const group = options.selectedGroup.value;
     const friend = options.selectedFriend.value;
-    if (!friend || !me) {
+    if (!group && !friend) {
       return;
     }
 
     const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-    const message: Message = {
-      id: clientMessageId,
-      senderId: me.id,
-      receiverId: friend.id,
-      content: content,
-      type: "text" as const,
-      status: "sending" as const,
-      createTime: Date.now(),
-      updateTime: Date.now(),
-    };
+    const message: Message = group
+      ? {
+          id: clientMessageId,
+          senderId: me.id,
+          receiverId: null,
+          groupId: group.id,
+          content: content,
+          type: "text" as const,
+          status: "sending" as const,
+          createTime: Date.now(),
+          updateTime: Date.now(),
+        }
+      : {
+          id: clientMessageId,
+          senderId: me.id,
+          receiverId: friend!.id,
+          groupId: null,
+          content: content,
+          type: "text" as const,
+          status: "sending" as const,
+          createTime: Date.now(),
+          updateTime: Date.now(),
+        };
 
     messages.value.push(message);
     void options.scrollMessagesToBottom("smooth");
 
-    options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
-      clientMessageId,
-      content: content,
-      receiverId: friend.id,
-      type: "text",
-    });
+    if (group) {
+      options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
+        clientMessageId,
+        content: content,
+        groupId: group.id,
+        type: "text",
+      });
+    } else {
+      options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
+        clientMessageId,
+        content: content,
+        receiverId: friend!.id,
+        type: "text",
+      });
+    }
   };
 
   const handleSendMedia = async (file: File): Promise<void> => {
     const me = options.currentUser.value;
     const friend = options.selectedFriend.value;
-    if (!friend || !me) {
+    const group = options.selectedGroup.value;
+    if ((!friend && !group) || !me) {
       return;
     }
 
@@ -121,19 +215,35 @@ export function useChatMessages(options: {
     const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const previewUrl = URL.createObjectURL(file);
 
-    const localMsg: Message = {
-      id: clientMessageId,
-      senderId: me.id,
-      receiverId: friend.id,
-      content: "",
-      type: msgType,
-      mediaUrl: previewUrl,
-      mediaMime: file.type,
-      mediaSize: file.size,
-      status: "sending" as const,
-      createTime: Date.now(),
-      updateTime: Date.now(),
-    };
+    const localMsg: Message = group
+      ? {
+          id: clientMessageId,
+          senderId: me.id,
+          receiverId: null,
+          groupId: group.id,
+          content: "",
+          type: msgType,
+          mediaUrl: previewUrl,
+          mediaMime: file.type,
+          mediaSize: file.size,
+          status: "sending" as const,
+          createTime: Date.now(),
+          updateTime: Date.now(),
+        }
+      : {
+          id: clientMessageId,
+          senderId: me.id,
+          receiverId: friend!.id,
+          groupId: null,
+          content: "",
+          type: msgType,
+          mediaUrl: previewUrl,
+          mediaMime: file.type,
+          mediaSize: file.size,
+          status: "sending" as const,
+          createTime: Date.now(),
+          updateTime: Date.now(),
+        };
 
     messages.value.push(localMsg);
     void options.scrollMessagesToBottom("smooth");
@@ -174,15 +284,27 @@ export function useChatMessages(options: {
         }
       }
 
-      options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
-        clientMessageId,
-        receiverId: friend.id,
-        content: "",
-        type: msgType,
-        mediaUrl: uploadResp.url,
-        mediaMime: uploadResp.mime,
-        mediaSize: uploadResp.size,
-      });
+      if (group) {
+        options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
+          clientMessageId,
+          groupId: group.id,
+          content: "",
+          type: msgType,
+          mediaUrl: uploadResp.url,
+          mediaMime: uploadResp.mime,
+          mediaSize: uploadResp.size,
+        });
+      } else {
+        options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
+          clientMessageId,
+          receiverId: friend!.id,
+          content: "",
+          type: msgType,
+          mediaUrl: uploadResp.url,
+          mediaMime: uploadResp.mime,
+          mediaSize: uploadResp.size,
+        });
+      }
     } catch (err) {
       const idx = messages.value.findIndex((m) => m.id === clientMessageId);
       if (idx >= 0) {
@@ -201,6 +323,58 @@ export function useChatMessages(options: {
 
   const handleMessageReceive = (message: any): void => {
     if (!message) {
+      return;
+    }
+
+    if (message.groupId) {
+      const me = options.currentUser.value?.id;
+      const groupId = options.selectedGroup.value?.id;
+      if (message.clientMessageId && me && message.senderId === me) {
+        const idx = messages.value.findIndex(
+          (m) => m.id === message.clientMessageId,
+        );
+        if (idx >= 0) {
+          const existing = messages.value[idx];
+          if (!existing) {
+            return;
+          }
+
+          messages.value[idx] = {
+            ...existing,
+            id: String(message.id),
+            status: message.status || existing.status,
+            updateTime: message.updateTime || Date.now(),
+          };
+        }
+      }
+
+      if (groupId && String(message.groupId) === String(groupId)) {
+        if (!me || message.senderId !== me) {
+          messages.value.push({
+            id: String(message.id),
+            senderId: message.senderId,
+            senderNickname:
+              message.senderNickname !== undefined
+                ? message.senderNickname
+                : null,
+            senderAvatarUrl:
+              message.senderAvatarUrl !== undefined
+                ? message.senderAvatarUrl
+                : null,
+            receiverId: null,
+            groupId: String(message.groupId),
+            content: message.content,
+            type: (message.type || "text") as any,
+            mediaUrl: message.mediaUrl ?? null,
+            mediaMime: message.mediaMime ?? null,
+            mediaSize: message.mediaSize ?? null,
+            status: (message.status || "delivered") as any,
+            createTime: message.createTime || Date.now(),
+            updateTime: message.updateTime || Date.now(),
+          });
+          void options.scrollMessagesToBottom("smooth");
+        }
+      }
       return;
     }
 
@@ -256,7 +430,8 @@ export function useChatMessages(options: {
       messages.value.push({
         id: String(message.id),
         senderId: message.senderId,
-        receiverId: message.receiverId,
+        receiverId: message.receiverId ?? null,
+        groupId: null,
         content: message.content,
         type: (message.type || "text") as any,
         mediaUrl: message.mediaUrl ?? null,
@@ -292,6 +467,7 @@ export function useChatMessages(options: {
   return {
     messages,
     fetchMessages,
+    fetchGroupMessages,
     handleSendMessage,
     handleSendMedia,
     handleMessageReceive,

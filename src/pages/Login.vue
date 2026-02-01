@@ -10,6 +10,7 @@
           <input
             type="text"
             id="username"
+            ref="usernameInput"
             v-model="form.username"
             class="form-input"
             required
@@ -28,6 +29,7 @@
           <input
             type="password"
             id="password"
+            ref="passwordInput"
             v-model="form.password"
             class="form-input"
             required
@@ -113,6 +115,9 @@ const form = ref({
   password: "",
 });
 
+const usernameInput = ref<HTMLInputElement | null>(null);
+const passwordInput = ref<HTMLInputElement | null>(null);
+
 const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as
   | string
   | undefined;
@@ -181,8 +186,25 @@ const renderTurnstile = async (): Promise<void> => {
   }
 };
 
+const syncAutofillToModel = (): void => {
+  const usernameDomValue = usernameInput.value?.value ?? "";
+  const passwordDomValue = passwordInput.value?.value ?? "";
+
+  if (!form.value.username && usernameDomValue) {
+    form.value.username = usernameDomValue;
+  }
+  if (!form.value.password && passwordDomValue) {
+    form.value.password = passwordDomValue;
+  }
+};
+
 onMounted(async () => {
   await nextTick();
+
+  syncAutofillToModel();
+  window.setTimeout(syncAutofillToModel, 50);
+  window.setTimeout(syncAutofillToModel, 250);
+
   if (!titleRef.value) {
     return;
   }
@@ -436,6 +458,11 @@ const handleLogin = async () => {
 
 .form-control .form-input:focus + label span,
 .form-control .form-input:valid + label span {
+  color: #111;
+  transform: translateY(-36px);
+}
+
+.form-control .form-input:-webkit-autofill + label span {
   color: #111;
   transform: translateY(-36px);
 }

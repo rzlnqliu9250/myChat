@@ -73,6 +73,21 @@ export function apiGet<T>(path: string, token?: string | null): Promise<T> {
   return apiRequest<T>(path, { method: "GET" }, token);
 }
 
+export function apiPatch<T>(
+  path: string,
+  body?: unknown,
+  token?: string | null,
+): Promise<T> {
+  return apiRequest<T>(
+    path,
+    {
+      method: "PATCH",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    token,
+  );
+}
+
 export function apiDelete<T>(path: string, token?: string | null): Promise<T> {
   return apiRequest<T>(path, { method: "DELETE" }, token);
 }

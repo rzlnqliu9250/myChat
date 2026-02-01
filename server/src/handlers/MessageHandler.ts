@@ -22,7 +22,11 @@ class MessageHandler {
                 this.handleHeartbeat(message, client);
                 break;
             case WebSocketEvent.MESSAGE_RECEIVE:
-                void this.handleSingleChat(message, client);
+                if (message?.data?.groupId) {
+                    void this.handleGroupChat(message, client);
+                } else {
+                    void this.handleSingleChat(message, client);
+                }
                 break;
             default:
                 logger.warn(`Unknown message type: ${message.type}`);
@@ -198,6 +202,206 @@ class MessageHandler {
 
         logger.info(
             `Single chat message from ${client.userId} to ${receiverId}: ${content.substring(0, 20)}...`,
+        );
+    }
+
+    private async handleGroupChat(
+        message: WebSocketMessage,
+        client: Client,
+    ): Promise<void> {
+        const {
+            groupId,
+            content,
+            type,
+            clientMessageId,
+            mediaUrl,
+            mediaMime,
+            mediaSize,
+        } = message.data;
+
+        const groupIdText =
+            typeof groupId === "string" ? groupId : String(groupId || "");
+        if (!groupIdText) {
+            logger.warn("群聊消息缺少 groupId");
+            return;
+        }
+
+        const messageType =
+            typeof type === "string" && type ? type : ("text" as const);
+        const contentText = typeof content === "string" ? content : "";
+
+        if (
+            (messageType === "image" || messageType === "video") &&
+            typeof mediaUrl !== "string"
+        ) {
+            logger.warn("媒体消息缺少 mediaUrl");
+            return;
+        }
+
+        // 校验是否为群成员
+        const membership = await supabase
+            .from("group_members")
+            .select("group_id")
+            .eq("group_id", groupIdText)
+            .eq("user_id", client.userId)
+            .maybeSingle();
+
+        if (membership.error) {
+            logger.error("群成员校验失败:", membership.error);
+            return;
+        }
+
+        if (!membership.data) {
+            logger.warn(
+                `User ${client.userId} is not a member of group ${groupIdText}`,
+            );
+            return;
+        }
+
+        const senderInfo = await supabase
+            .from("users")
+            .select("id, username, nickname, avatar_url")
+            .eq("id", client.userId)
+            .maybeSingle();
+
+        if (senderInfo.error) {
+            logger.error("读取发送者信息失败:", senderInfo.error);
+        }
+
+        const senderNickname = senderInfo.data
+            ? (senderInfo.data.nickname ?? senderInfo.data.username)
+            : null;
+        const senderAvatarUrl = senderInfo.data
+            ? (senderInfo.data.avatar_url ?? null)
+            : null;
+
+        const baseInsert = {
+            sender_id: client.userId,
+            receiver_id: null,
+            group_id: groupIdText,
+            content: contentText,
+            is_read: false,
+            media_url: typeof mediaUrl === "string" ? mediaUrl : null,
+            media_mime: typeof mediaMime === "string" ? mediaMime : null,
+            media_size: typeof mediaSize === "number" ? mediaSize : null,
+        };
+
+        const insertWithMessageType = async () =>
+            supabase
+                .from("messages")
+                .insert({
+                    ...baseInsert,
+                    message_type: messageType,
+                })
+                .select("id, created_at")
+                .single();
+
+        const insertWithType = async () =>
+            supabase
+                .from("messages")
+                .insert({
+                    ...baseInsert,
+                    type: messageType,
+                })
+                .select("id, created_at")
+                .single();
+
+        let insertResult = await insertWithMessageType();
+        if (
+            insertResult.error &&
+            (insertResult.error as any).message &&
+            String((insertResult.error as any).message).includes("message_type")
+        ) {
+            insertResult = await insertWithType();
+        }
+
+        if (insertResult.error || !insertResult.data) {
+            logger.error("群消息保存失败:", insertResult.error);
+
+            const failedMessage: WebSocketMessage = {
+                type: WebSocketEvent.MESSAGE_RECEIVE,
+                data: {
+                    clientMessageId,
+                    id: `temp_${Date.now()}`,
+                    senderId: client.userId,
+                    senderNickname,
+                    senderAvatarUrl,
+                    receiverId: null,
+                    groupId: groupIdText,
+                    content: contentText,
+                    type: messageType,
+                    mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null,
+                    mediaMime: typeof mediaMime === "string" ? mediaMime : null,
+                    mediaSize: typeof mediaSize === "number" ? mediaSize : null,
+                    status: "failed" as const,
+                    createTime: Date.now(),
+                    updateTime: Date.now(),
+                },
+                timestamp: Date.now(),
+            };
+
+            userManager.sendMessageToUser(client.userId, failedMessage);
+            return;
+        }
+
+        const messageId = String(insertResult.data.id);
+        const createTimeMs = insertResult.data.created_at
+            ? new Date(insertResult.data.created_at).getTime()
+            : Date.now();
+
+        const chatMessage: WebSocketMessage = {
+            type: WebSocketEvent.MESSAGE_RECEIVE,
+            data: {
+                clientMessageId,
+                id: messageId,
+                senderId: client.userId,
+                senderNickname,
+                senderAvatarUrl,
+                receiverId: null,
+                groupId: groupIdText,
+                content: contentText,
+                type: messageType,
+                mediaUrl: typeof mediaUrl === "string" ? mediaUrl : null,
+                mediaMime: typeof mediaMime === "string" ? mediaMime : null,
+                mediaSize: typeof mediaSize === "number" ? mediaSize : null,
+                status: "sent" as const,
+                createTime: createTimeMs,
+                updateTime: createTimeMs,
+            },
+            timestamp: Date.now(),
+        };
+
+        const members = await supabase
+            .from("group_members")
+            .select("user_id")
+            .eq("group_id", groupIdText);
+
+        if (members.error) {
+            logger.error("读取群成员失败:", members.error);
+        } else {
+            const memberIds = (members.data || [])
+                .map((m: any) => String(m.user_id))
+                .filter(Boolean);
+
+            memberIds.forEach((uid) => {
+                if (uid === client.userId) {
+                    return;
+                }
+                userManager.sendMessageToUser(uid, chatMessage);
+            });
+        }
+
+        userManager.sendMessageToUser(client.userId, {
+            type: WebSocketEvent.MESSAGE_RECEIVE,
+            data: {
+                ...chatMessage.data,
+                status: "delivered" as const,
+            },
+            timestamp: Date.now(),
+        });
+
+        logger.info(
+            `Group chat message from ${client.userId} to group ${groupIdText}: ${contentText.substring(0, 20)}...`,
         );
     }
 }

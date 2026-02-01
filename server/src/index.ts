@@ -12,7 +12,9 @@ import { ChatWebSocketServer } from "./server/WebSocketServer"; //WebSocket 服�
 import { authRouter } from "./routes/auth"; //注册与登录接口
 import { friendsRouter } from "./routes/friends"; //好友列表接口
 import { messagesRouter } from "./routes/messages"; //消息接口
+import { groupsRouter } from "./routes/groups"; //群聊接口
 import { uploadsRouter } from "./routes/uploads"; //上传接口
+import { usersRouter } from "./routes/users"; //用户信息接口
 import { errorHandler } from "./middleware/errorHandler"; //统一错误处理中间件
 
 //读取环境变量（dotenv）
@@ -44,7 +46,9 @@ class ChatServer {
         app.use("/api", authRouter);
         app.use("/api", friendsRouter);
         app.use("/api", messagesRouter);
+        app.use("/api", groupsRouter);
         app.use("/api", uploadsRouter);
+        app.use("/api", usersRouter);
 
         app.use(errorHandler); //错误处理中间件,统一捕获路由里 next(err) 抛出的错误
 

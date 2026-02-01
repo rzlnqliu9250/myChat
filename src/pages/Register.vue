@@ -43,6 +43,7 @@
             v-model="form.username"
             class="form-input"
             :class="{ filled: !!form.username }"
+            maxlength="10"
             required
           />
           <label>
@@ -62,6 +63,7 @@
             v-model="form.nickname"
             class="form-input"
             :class="{ filled: !!form.nickname }"
+            maxlength="10"
             required
           />
           <label>
@@ -124,11 +126,22 @@
           class="register-button"
           :class="{ loading }"
           :disabled="
-            loading || form.password !== form.confirmPassword || !turnstileToken
+            loading ||
+            form.password !== form.confirmPassword ||
+            !turnstileToken ||
+            form.username.length > 10 ||
+            form.nickname.length > 10
           "
         >
           <span class="button-text">注册</span>
         </button>
+
+        <p
+          v-if="form.username.length > 10 || form.nickname.length > 10"
+          class="error-message"
+        >
+          账号和昵称最多 10 个字符
+        </p>
 
         <div class="footer-turnstile-row">
           <div class="form-footer">
@@ -341,6 +354,11 @@ onUnmounted(() => {
   }
 });
 const handleRegister = async () => {
+  if (form.value.username.length > 10 || form.value.nickname.length > 10) {
+    turnstileError.value = "账号和昵称最多 10 个字符";
+    return;
+  }
+
   if (form.value.password !== form.value.confirmPassword) {
     return;
   }
