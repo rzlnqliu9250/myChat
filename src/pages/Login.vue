@@ -3,44 +3,27 @@
     <div id="animation" class="large grid centered square-grid">
       <h2 ref="titleRef" class="text-xl">HELLO MYCHAT</h2>
     </div>
+    
     <div class="login-form-wrapper">
       <h1 class="login-title">登录</h1>
       <form @submit.prevent="handleLogin" class="login-form">
-        <div class="form-control">
+        
+        <div class="form-control" v-for="field in formFields" :key="field.id">
           <input
-            type="text"
-            id="username"
-            ref="usernameInput"
-            v-model="form.username"
+            :type="field.type"
+            :id="field.id"
+            v-model="form[field.id]"
             class="form-input"
             required
           />
           <label>
             <span
-              v-for="(ch, i) in loginUsernameLabel"
+              v-for="(ch, i) in field.label"
               :key="`${ch}-${i}`"
               :style="{ transitionDelay: `${i * 50}ms` }"
-              >{{ ch }}</span
             >
-          </label>
-        </div>
-
-        <div class="form-control">
-          <input
-            type="password"
-            id="password"
-            ref="passwordInput"
-            v-model="form.password"
-            class="form-input"
-            required
-          />
-          <label>
-            <span
-              v-for="(ch, i) in loginPasswordLabel"
-              :key="`${ch}-${i}`"
-              :style="{ transitionDelay: `${i * 50}ms` }"
-              >{{ ch }}</span
-            >
+              {{ ch }}
+            </span>
           </label>
         </div>
 
@@ -55,21 +38,17 @@
 
         <div class="footer-turnstile-row">
           <div class="form-footer">
-            <p>
-              还没有账号？<br />
-              <router-link to="/register" class="register-link"
-                >立即注册</router-link
-              >
+            <p>还没有账号？<br />
+              <router-link to="/register" class="register-link">立即注册</router-link>
             </p>
           </div>
 
           <div class="turnstile-row">
             <div ref="turnstileEl" class="turnstile-widget"></div>
-            <p v-if="turnstileError" class="turnstile-error">
-              {{ turnstileError }}
-            </p>
+            <p v-if="turnstileError" class="turnstile-error">{{ turnstileError }}</p>
           </div>
         </div>
+
       </form>
     </div>
   </div>
@@ -83,165 +62,98 @@ import { useWebSocket } from "../composables/useWebSocket";
 import { apiPost } from "../services/api";
 import { animate, stagger, splitText } from "animejs";
 
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (
-        container: HTMLElement,
-        options: {
-          sitekey: string;
-          callback: (token: string) => void;
-          "expired-callback"?: () => void;
-          "error-callback"?: () => void;
-          appearance?: "always" | "execute" | "interaction-only";
-        },
-      ) => string;
-      reset: (widgetId: string) => void;
-      remove: (widgetId: string) => void;
-    };
-  }
-}
-
 const router = useRouter();
 const userStore = useUserStore();
 const { connect, wsManager } = useWebSocket();
 
+// UI 与动画状态
 const titleRef = ref<HTMLElement | null>(null);
 let titleAnimation: { pause?: () => void } | null = null;
-
 const loading = ref(false);
-const form = ref({
-  username: "",
-  password: "",
-});
 
-const usernameInput = ref<HTMLInputElement | null>(null);
-const passwordInput = ref<HTMLInputElement | null>(null);
+// 表单数据与配置
+const form = ref<Record<string, string>>({ username: "", password: "" });
+const formFields = [
+  { id: "username", type: "text", label: "账号".split("") },
+  { id: "password", type: "password", label: "密码".split("") },
+];
 
-const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as
-  | string
-  | undefined;
+// Turnstile 状态
+const turnstileSiteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 const turnstileEl = ref<HTMLElement | null>(null);
 const turnstileToken = ref<string | null>(null);
 const turnstileError = ref<string | null>(null);
 let turnstileWidgetId: string | null = null;
 
-const loginUsernameLabel = "账号".split("");
-const loginPasswordLabel = "密码".split("");
+/* 浏览器自动填充兼容逻辑 */
+const syncAutofillToModel = (): void => {
+  // 直接通过 ID 获取，省去了声明冗余的 ref
+  const uInput = document.getElementById("username") as HTMLInputElement | null;
+  const pInput = document.getElementById("password") as HTMLInputElement | null;
 
-const waitForTurnstile = async (): Promise<
-  NonNullable<Window["turnstile"]>
-> => {
+  if (uInput?.value && !form.value.username) form.value.username = uInput.value;
+  if (pInput?.value && !form.value.password) form.value.password = pInput.value;
+};
+
+/* Turnstile 验证逻辑 */
+const waitForTurnstile = async () => {
   const start = Date.now();
   while (!window.turnstile) {
-    if (Date.now() - start > 8000) {
-      throw new Error("Turnstile 脚本加载超时");
-    }
+    if (Date.now() - start > 8000) throw new Error("Turnstile 脚本加载超时");
     await new Promise((r) => setTimeout(r, 100));
   }
   return window.turnstile;
 };
 
-const renderTurnstile = async (): Promise<void> => {
-  if (!turnstileSiteKey) {
-    turnstileError.value = "缺少 Turnstile Site Key";
-    return;
-  }
-  if (!turnstileEl.value) {
-    return;
-  }
-
-  if (turnstileWidgetId && window.turnstile) {
-    try {
-      window.turnstile.reset(turnstileWidgetId);
-    } catch {
-      // ignore
-    }
-    return;
-  }
+const renderTurnstile = async () => {
+  if (!turnstileSiteKey || !turnstileEl.value) return (turnstileError.value = "缺少验证配置");
+  if (turnstileWidgetId && window.turnstile) return window.turnstile.reset(turnstileWidgetId);
 
   try {
     const turnstile = await waitForTurnstile();
     turnstileEl.value.innerHTML = "";
-    turnstileToken.value = null;
-    turnstileError.value = null;
     turnstileWidgetId = turnstile.render(turnstileEl.value, {
       sitekey: turnstileSiteKey,
-      callback: (token: string) => {
-        turnstileToken.value = token;
-        turnstileError.value = null;
-      },
-      "expired-callback": () => {
-        turnstileToken.value = null;
-      },
-      "error-callback": () => {
-        turnstileToken.value = null;
-        turnstileError.value = "验证组件加载失败，请刷新重试";
-      },
+      callback: (token: string) => { turnstileToken.value = token; turnstileError.value = null; },
+      "expired-callback": () => (turnstileToken.value = null),
+      "error-callback": () => { turnstileToken.value = null; turnstileError.value = "验证失败，请重试"; },
     });
   } catch (err) {
-    turnstileToken.value = null;
-    turnstileError.value =
-      err instanceof Error ? err.message : "验证组件初始化失败";
+    turnstileError.value = err instanceof Error ? err.message : "验证组件初始化失败";
   }
 };
 
-const syncAutofillToModel = (): void => {
-  const usernameDomValue = usernameInput.value?.value ?? "";
-  const passwordDomValue = passwordInput.value?.value ?? "";
-
-  if (!form.value.username && usernameDomValue) {
-    form.value.username = usernameDomValue;
-  }
-  if (!form.value.password && passwordDomValue) {
-    form.value.password = passwordDomValue;
-  }
-};
-
+/* 生命周期 */
 onMounted(async () => {
   await nextTick();
 
+  // 处理浏览器自动填充
   syncAutofillToModel();
   window.setTimeout(syncAutofillToModel, 50);
   window.setTimeout(syncAutofillToModel, 250);
 
-  if (!titleRef.value) {
-    return;
+  // 初始化标题动画
+  if (titleRef.value) {
+    const { chars } = splitText(titleRef.value, { words: false, chars: true });
+    titleAnimation = animate(chars, {
+      y: [{ to: "-2rem", ease: "outExpo", duration: 600 }, { to: 0, ease: "outBounce", duration: 800, delay: 100 }],
+      rotate: { from: "-1turn", delay: 0 },
+      delay: stagger(50),
+      ease: "inOutCirc",
+      loopDelay: 1000,
+      loop: true,
+    });
   }
-  const { chars } = splitText(titleRef.value, { words: false, chars: true });
-  titleAnimation = animate(chars, {
-    y: [
-      { to: "-2.75rem", ease: "outExpo", duration: 600 },
-      { to: 0, ease: "outBounce", duration: 800, delay: 100 },
-    ],
-    rotate: {
-      from: "-1turn",
-      delay: 0,
-    },
-    delay: stagger(50),
-    ease: "inOutCirc",
-    loopDelay: 1000,
-    loop: true,
-  });
 
   await renderTurnstile();
 });
 
 onUnmounted(() => {
-  try {
-    titleAnimation?.pause?.();
-  } catch {
-    // ignore
-  }
-
-  if (turnstileWidgetId && window.turnstile) {
-    try {
-      window.turnstile.remove(turnstileWidgetId);
-    } catch {
-      // ignore
-    }
-  }
+  titleAnimation?.pause?.();
+  if (turnstileWidgetId && window.turnstile) window.turnstile.remove(turnstileWidgetId);
 });
+
+/* 登录提交逻辑 */
 const handleLogin = async () => {
   if (!turnstileToken.value) {
     turnstileError.value = "请先完成真人验证";
@@ -249,15 +161,7 @@ const handleLogin = async () => {
   }
   loading.value = true;
   try {
-    const loginData = await apiPost<{
-      token: string;
-      user: {
-        id: string;
-        username: string;
-        nickname: string;
-        avatarUrl?: string | null;
-      };
-    }>("/api/login", {
+    const loginData = await apiPost<any>("/api/login", {
       username: form.value.username,
       password: form.value.password,
       turnstileToken: turnstileToken.value,
@@ -268,29 +172,20 @@ const handleLogin = async () => {
       username: loginData.user.username,
       nickname: loginData.user.nickname || loginData.user.username,
       avatar: loginData.user.avatarUrl || undefined,
-      status: "online" as const,
+      status: "online",
       lastOnline: Date.now(),
     });
     userStore.setToken(loginData.token);
-
     wsManager.setToken(loginData.token);
-
-    // 连接WebSocket
+    
     await connect();
-
-    // 跳转到聊天页面
     router.push("/chat");
+    
   } catch (error) {
     console.error("登录失败:", error);
     turnstileError.value = "登录失败，请重新完成验证";
     turnstileToken.value = null;
-    if (turnstileWidgetId && window.turnstile) {
-      try {
-        window.turnstile.reset(turnstileWidgetId);
-      } catch {
-        // ignore
-      }
-    }
+    if (turnstileWidgetId && window.turnstile) window.turnstile.reset(turnstileWidgetId);
   } finally {
     loading.value = false;
   }
@@ -298,300 +193,120 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-#animation .text-xl {
-  font-size: 3rem;
-  color: currentColor;
-  letter-spacing: 0.06em;
-}
-
-#animation {
-  margin-bottom: 16px;
-}
+/* 核心响应式修复：min-height 替代 height，加入 padding 允许上下滚动 */
 .login-container {
+  min-height: 100vh;
   width: 100vw;
-  height: 100vh;
+  padding: 40px 20px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   color: #111;
   background:
-    radial-gradient(
-      900px circle at 20% 15%,
-      rgba(0, 1, 240, 0.1),
-      transparent 60%
-    ),
-    radial-gradient(
-      700px circle at 85% 30%,
-      rgba(66, 184, 131, 0.1),
-      transparent 55%
-    ),
-    radial-gradient(
-      800px circle at 50% 95%,
-      rgba(17, 17, 17, 0.06),
-      transparent 55%
-    ),
+    radial-gradient(900px circle at 20% 15%, rgba(0, 1, 240, 0.1), transparent 60%),
+    radial-gradient(700px circle at 85% 30%, rgba(66, 184, 131, 0.1), transparent 55%),
+    radial-gradient(800px circle at 50% 95%, rgba(17, 17, 17, 0.06), transparent 55%),
     linear-gradient(180deg, #ffffff 0%, #f6f7fb 100%);
 }
 
-.login-container::before,
-.login-container::after {
+.login-container::before, .login-container::after {
   content: "";
   position: absolute;
   inset: -40% -30%;
-  background: radial-gradient(
-    closest-side,
-    rgba(0, 1, 240, 0.12),
-    transparent 70%
-  );
+  background: radial-gradient(closest-side, rgba(0, 1, 240, 0.12), transparent 70%);
   filter: blur(28px);
   opacity: 0.6;
   pointer-events: none;
+  z-index: 0;
 }
 
 .login-container::after {
   inset: -30% -40%;
-  background: radial-gradient(
-    closest-side,
-    rgba(66, 184, 131, 0.12),
-    transparent 70%
-  );
+  background: radial-gradient(closest-side, rgba(66, 184, 131, 0.12), transparent 70%);
   opacity: 0.45;
 }
 
-#animation,
-.login-form-wrapper {
+#animation, .login-form-wrapper {
   position: relative;
   z-index: 1;
 }
 
+/* 动态计算标题大小：自适应小屏幕 */
+#animation .text-xl {
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  color: currentColor;
+  letter-spacing: 0.06em;
+}
+#animation { margin-bottom: 20px; }
+
+/* 调整了圆角，与注册页统一视觉风格 */
 .login-form-wrapper {
   width: 100%;
   max-width: 400px;
-  background-color: rgba(255, 255, 255, 0.82);
+  background-color: rgba(255, 255, 255, 0.85);
   padding: 30px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(10px);
 }
 
-.login-title {
-  text-align: center;
-  margin-bottom: 30px;
-  color: #333;
-  font-size: 24px;
-  font-weight: 600;
-}
+.login-title { text-align: center; margin-bottom: 25px; color: #333; font-size: 24px; font-weight: 600; }
+.login-form { display: flex; flex-direction: column; gap: 18px; }
 
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #555;
-}
-
-.form-input {
-  padding: 12px;
-  border: none;
-  border-bottom: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 16px;
+/* 表单特效区 */
+.form-control { position: relative; width: 100%; margin: 0; }
+.form-control .form-input {
+  background-color: transparent; border: 0; border-bottom: 2px #f5f5f5 solid;
+  display: block; width: 100%; padding: 25px 0 10px; font-size: 16px; color: #222;
   transition: border-color 0.3s;
 }
-
-.form-input:focus {
-  outline: none;
-  border-color: #0001f0;
-  box-shadow: none;
-}
-
-.form-control {
-  position: relative;
-  width: 100%;
-  margin: 0;
-}
-
-.form-control .form-input {
-  background-color: transparent;
-  border: 0;
-  border-bottom: 2px #f5f5f5 solid;
-  display: block;
-  width: 100%;
-  padding: 30px 0 10px;
-  font-size: 18px;
-  color: #222;
-}
-
-.form-control .form-input:focus,
-.form-control .form-input:valid {
-  outline: 0;
-  border-bottom-color: #111;
-}
-
-.form-control label {
-  position: absolute;
-  top: 21px;
-  left: 0;
-  pointer-events: none;
-}
-
+.form-control .form-input:focus, .form-control .form-input:valid { outline: 0; border-bottom-color: #111; }
+.form-control label { position: absolute; top: 21px; left: 0; pointer-events: none; }
 .form-control label span {
-  display: inline-block;
-  font-size: 18px;
-  min-width: 5px;
-  color: #666;
+  display: inline-block; font-size: 16px; min-width: 5px; color: #666;
   transition: 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
-
-.form-control .form-input:focus + label span,
-.form-control .form-input:valid + label span {
-  color: #111;
-  transform: translateY(-36px);
-}
-
+.form-control .form-input:focus + label span, 
+.form-control .form-input:valid + label span,
 .form-control .form-input:-webkit-autofill + label span {
-  color: #111;
-  transform: translateY(-36px);
+  color: #111; transform: translateY(-32px); font-size: 14px;
 }
 
+/* 登录按钮 */
 .login-button {
-  background-color: rgba(0, 1, 240, 0.08);
-  color: #0001f0;
-  border: none;
-  cursor: pointer;
-  border-radius: 8px;
-  width: 100%;
-  height: 45px;
-  transition: 0.3s;
-  font-size: 16px;
-  font-weight: 500;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: rgba(0, 1, 240, 0.08); color: #0001f0; border: none; cursor: pointer;
+  border-radius: 8px; width: 100%; height: 45px; transition: 0.3s; font-size: 16px; font-weight: 500;
+  display: flex; align-items: center; justify-content: center; position: relative;
+  margin-top: 10px;
 }
-
-.login-button.loading {
-  background-color: #0001f0;
-  color: #fff;
-}
-
-.login-button .button-text {
-  transition: opacity 0.2s ease;
-}
-
-.login-button.loading .button-text {
-  opacity: 0;
-}
-
-.login-button.loading::first-line {
-  color: transparent;
-}
-
+.login-button.loading { background-color: #0001f0; color: #fff; }
+.login-button.loading .button-text { opacity: 0; }
 .login-button.loading::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  margin-top: -9px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.45);
-  border-top-color: rgba(255, 255, 255, 1);
+  content: ""; position: absolute; width: 18px; height: 18px;
+  border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.45); border-top-color: #fff;
   animation: loginButtonSpin 0.8s linear infinite;
 }
+@keyframes loginButtonSpin { to { transform: rotate(360deg); } }
+.login-button:hover:not(:disabled) { background-color: #0001f0; box-shadow: 0 4px 12px rgba(0, 1, 240, 0.3); color: #fff; }
+.login-button:disabled { background-color: #a5a9ff; cursor: not-allowed; color: #fff; }
 
-@keyframes loginButtonSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.login-button:hover:not(:disabled) {
-  background-color: #0001f0;
-  box-shadow: 0 0 0 5px rgba(0, 1, 240, 0.37);
-  color: #fff;
-}
-
-.login-button:disabled {
-  background-color: #a5a9ff;
-  cursor: not-allowed;
-}
-
-.form-footer {
-  margin-top: 0;
-  text-align: left;
-  font-size: 14px;
-  color: #666;
-}
-
+/* 底部区域响应式修复：使用 flex-wrap 允许小屏幕折行 */
 .footer-turnstile-row {
   margin-top: 10px;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.footer-turnstile-row .form-footer {
-  flex: 1;
-}
-
-.footer-turnstile-row .turnstile-row {
-  margin-top: 0;
-  flex: 1;
-  align-items: flex-end;
-}
-
-.footer-turnstile-row .turnstile-widget {
-  justify-content: flex-end;
-}
-
-.register-link {
-  color: #0001f0;
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.3s;
-}
-
-.register-link:hover {
-  color: #0001f0;
-  text-decoration: underline;
-}
-
-.turnstile-row {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
+  flex-wrap: wrap; /* 核心修改：允许折叠 */
   align-items: center;
+  justify-content: space-between;
+  gap: 15px;
 }
-
-.turnstile-widget {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-.turnstile-error {
-  margin: 6px 0 0;
-  padding: 0;
-  font-size: 12px;
-  color: #ff5252;
-  text-align: center;
-}
+.form-footer { font-size: 14px; color: #666; line-height: 1.5; }
+.register-link { color: #0001f0; text-decoration: none; font-weight: 600; }
+.register-link:hover { text-decoration: underline; }
+.turnstile-row { display: flex; flex-direction: column; align-items: flex-end; }
+.turnstile-error { margin-top: 5px; font-size: 12px; color: #ff5252; text-align: right; }
 </style>
