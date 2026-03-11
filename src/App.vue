@@ -9,9 +9,10 @@
 </template>
 
 <script setup lang="ts">
-import { provide } from "vue";
+import { provide, watch } from "vue";
 import { WebSocketManager } from "./services/WebSocketManager";
 import { wsUrl } from "./config/endpoints";
+import { useUserStore } from "./stores/userStore";
 
 // 提供 WebSocketManager 实例
 // 实际应用中，WebSocket URL 应该从环境变量或配置文件中获取
@@ -19,6 +20,22 @@ const token = localStorage.getItem("token") || "";
 
 const wsManager = new WebSocketManager(wsUrl, token);
 provide("wsManager", wsManager);
+const userStore = useUserStore();
+
+watch(
+  () => userStore.token,
+  (newToken) => {
+    wsManager.setToken(newToken || "");
+
+    if (!newToken) {
+      wsManager.disconnect();
+      return;
+    }
+
+    wsManager.disconnect();
+    void wsManager.connect();
+  },
+);
 </script>
 
 <style scoped>

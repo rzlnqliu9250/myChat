@@ -5,6 +5,8 @@ import type { UiFriend, UiGroup } from "../../types/chat";
 import { WebSocketEvent } from "../../models/WebSocket";
 
 export function useChatMessages(options: {
+  // getToken/currentUser/selectedFriend/selectedGroup/friends 等依赖由 Chat.vue 传入。
+  // 这样这个 composable 不依赖全局 store：更容易复用/测试。
   getToken: () => string | null;
   currentUser: ComputedRef<{ id: string } | null>;
   selectedFriend: Ref<UiFriend | null>;
@@ -13,8 +15,14 @@ export function useChatMessages(options: {
   scrollMessagesToBottom: (behavior?: ScrollBehavior) => Promise<void>;
   incrementUnread: (friendId: string) => void;
   maybeNotifyDesktop: (friendId: string, preview: string) => void;
+  // send: 底层是 WebSocketManager.send(type, data)
+  // 这里仅关心协议层（type/data），不关心 ws 如何重连/心跳。
   send: <T>(type: any, data: T) => void;
 }) {
+  // messages 是当前“会话窗口”的消息列表：
+  // - 单聊：selectedFriend 的会话消息
+  // - 群聊：selectedGroup 的会话消息
+  // Chat.vue 会在切换会话时调用 fetchMessages/fetchGroupMessages 来刷新它。
   const messages = ref<Message[]>([]);
 
   const fetchMessages = async (friendId: string): Promise<void> => {
@@ -23,6 +31,7 @@ export function useChatMessages(options: {
       return;
     }
 
+    // 约定后端返回的字段：这里显式声明 data 的 shape，方便 TS 推导。
     let data: {
       messages: {
         id: string;
@@ -44,10 +53,15 @@ export function useChatMessages(options: {
     try {
       data = await apiGet<typeof data>(`/api/messages/${friendId}`, token);
     } catch (e) {
+      // 这里把网络层/解析层的错误统一转换成对用户友好的文案。
       const msg = e instanceof Error ? e.message : "";
       throw new Error(msg && msg !== "请求失败" ? msg : "加载聊天记录失败");
     }
 
+    // 把后端的 message DTO 映射为前端 UI Message：
+    // - createdAt 字符串转成时间戳
+    // - isRead 映射到 status（read/delivered）
+    // 注意：历史消息是“权威数据源”，这里会直接覆盖 messages。
     messages.value = (data.messages || []).map((m) => {
       const ts = new Date(m.createdAt).getTime();
       return {
@@ -75,6 +89,7 @@ export function useChatMessages(options: {
       return;
     }
 
+    // 群消息与单聊类似，只是多了 senderNickname/avatar 等展示字段。
     let data: {
       messages: {
         id: string;
@@ -101,6 +116,7 @@ export function useChatMessages(options: {
       throw new Error(msg && msg !== "请求失败" ? msg : "加载群消息失败");
     }
 
+    // 同样将后端 DTO 映射为 UI Message。
     messages.value = (data.messages || []).map((m) => {
       const ts = new Date(m.createdAt).getTime();
       return {
@@ -142,8 +158,17 @@ export function useChatMessages(options: {
       return;
     }
 
+    // clientMessageId：客户端生成的“临时消息 id”。
+    // 目的：
+    // 1) 本地先乐观插入一条 sending 消息时，用它作为主键
+    // 2) 服务端回执会原样带回 clientMessageId，前端据此把本地消息更新为正式消息
+    // 这能避免：服务端回执到达时无法匹配本地消息，从而产生重复 push。
     const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
+    // 构造本地消息（乐观 UI）：
+    // - id 暂时用 clientMessageId
+    // - status 先置为 sending
+    // - createTime/updateTime 使用本地时间（后续会被服务端回执覆盖/校正）
     const message: Message = group
       ? {
           id: clientMessageId,
@@ -168,9 +193,12 @@ export function useChatMessages(options: {
           updateTime: Date.now(),
         };
 
+    // 立刻插入列表，让用户立刻看到“我发出去了”
     messages.value.push(message);
     void options.scrollMessagesToBottom("smooth");
 
+    // 通过 WebSocket 发送到后端。
+    // 这里的事件名虽然叫 MESSAGE_RECEIVE，但语义是“发消息”（服务端也用这个事件做回执/转发）。
     if (group) {
       options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
         clientMessageId,
@@ -211,10 +239,16 @@ export function useChatMessages(options: {
       return;
     }
 
+    // 媒体消息分两阶段：
+    // 1) 本地先插入一个带预览图的 sending 消息（使用 blob URL）
+    // 2) 先走 HTTP 上传拿到真实 URL，再通过 WS 发“媒体消息”给服务端落库与转发
     const msgType = isImage ? ("image" as const) : ("video" as const);
     const clientMessageId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const previewUrl = URL.createObjectURL(file);
 
+    // localMsg 是“占位消息”：
+    // - mediaUrl 先用预览 url（blob:...）
+    // - 上传成功后会把 mediaUrl 替换为服务端返回的 cdn/存储 url
     const localMsg: Message = group
       ? {
           id: clientMessageId,
@@ -252,6 +286,7 @@ export function useChatMessages(options: {
     form.append("file", file);
 
     try {
+      // 上传媒体走 HTTP（比 WS 传 binary 更简单稳定，也便于接入对象存储）。
       const uploadResp = await apiRequest<{
         url: string;
         mime: string;
@@ -271,6 +306,8 @@ export function useChatMessages(options: {
         // ignore
       }
 
+      // 用 clientMessageId 找到本地消息，把预览信息更新为真实 URL。
+      // 注意：此时仍保持 status=sending，等待 WS 回执更新为 sent/delivered。
       const idx = messages.value.findIndex((m) => m.id === clientMessageId);
       if (idx >= 0) {
         const existing = messages.value[idx];
@@ -284,6 +321,9 @@ export function useChatMessages(options: {
         }
       }
 
+      // 上传成功后，通过 WS 把媒体消息发送给后端：
+      // - mediaUrl/mime/size 用上传返回
+      // - content 对于媒体消息为空字符串
       if (group) {
         options.send(WebSocketEvent.MESSAGE_RECEIVE as any, {
           clientMessageId,
@@ -306,6 +346,8 @@ export function useChatMessages(options: {
         });
       }
     } catch (err) {
+      // 上传失败：本地消息标记 failed。
+      // 这是纯前端失败，不会有后端回执。
       const idx = messages.value.findIndex((m) => m.id === clientMessageId);
       if (idx >= 0) {
         const existing = messages.value[idx];
@@ -326,9 +368,17 @@ export function useChatMessages(options: {
       return;
     }
 
+    // 这里处理服务端推送的 MESSAGE_RECEIVE。
+    // 注意：服务端对“发消息”和“回执/转发”都复用了同一个事件名。
+    // 因此前端要根据 message.senderId / receiverId / clientMessageId 来区分场景：
+    // - 我自己发出的消息回执：带 clientMessageId 且 senderId==me
+    // - 对方发来的新消息：senderId!=me 并且属于当前会话
+    // - 非当前会话：不追加，只累计未读并做桌面通知
     if (message.groupId) {
       const me = options.currentUser.value?.id;
       const groupId = options.selectedGroup.value?.id;
+
+      // 群聊：如果是我发出的消息回执（senderId==me），则用 clientMessageId 更新本地 sending。
       if (message.clientMessageId && me && message.senderId === me) {
         const idx = messages.value.findIndex(
           (m) => m.id === message.clientMessageId,
@@ -341,6 +391,7 @@ export function useChatMessages(options: {
 
           messages.value[idx] = {
             ...existing,
+            // 把临时 id 替换成服务端生成的正式 id（用于后续唯一标识/渲染 key）
             id: String(message.id),
             status: message.status || existing.status,
             updateTime: message.updateTime || Date.now(),
@@ -348,6 +399,8 @@ export function useChatMessages(options: {
         }
       }
 
+      // 群聊：只有“当前正在看的群”才追加消息。
+      // 如果是我自己发的，前面已经走回执更新，所以这里要避免重复 push。
       if (groupId && String(message.groupId) === String(groupId)) {
         if (!me || message.senderId !== me) {
           messages.value.push({
@@ -394,7 +447,9 @@ export function useChatMessages(options: {
 
         messages.value[idx] = {
           ...existing,
+          // 把临时 id 替换成服务端正式 id
           id: String(message.id),
+          // 回执里可能带回 content/type/media*（媒体消息场景），这里做兼容合并
           content:
             typeof message.content === "string"
               ? message.content
@@ -415,11 +470,15 @@ export function useChatMessages(options: {
           status: message.status || existing.status,
           updateTime: message.updateTime || Date.now(),
         };
+        void options.scrollMessagesToBottom("smooth");
         return;
       }
+
+      return;
     }
 
-    // 其他情况：如果当前正在跟该好友聊天，则追加
+    // 其他情况：服务端推送来的“真实消息”。
+    // 只有属于当前会话才追加到 messages，否则只做未读累计/通知。
     const isCurrentConversation =
       me &&
       friendId &&
@@ -450,6 +509,7 @@ export function useChatMessages(options: {
       message.senderId &&
       message.senderId !== me
     ) {
+      // 非当前会话的消息：更新未读 + 桌面通知
       const incomingFriendId = String(message.senderId);
       if (!isCurrentConversation) {
         options.incrementUnread(incomingFriendId);

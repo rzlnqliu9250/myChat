@@ -117,22 +117,43 @@ import { useUnreadCounts } from "../composables/chat/useUnreadCounts";
 import { useChatMessages } from "../composables/chat/useChatMessages";
 import type { UiFriend, UiGroup } from "../types/chat";
 
+// Chat.vue 是“聊天主页面”的编排层（Orchestrator）：
+// - 负责把各种 composables 组装起来（好友列表/群组/消息/未读/通知/头像上传等）
+// - 负责维护当前选中的会话（selectedFriend/selectedGroup）
+// - 负责绑定 WebSocket 事件，把服务端推送交给对应模块处理
+// 注意：这里尽量不写底层逻辑（例如 WS 重连/HTTP 封装/消息状态机），底层逻辑都沉到 composables/services。
 const router = useRouter();
 const userStore = useUserStore();
 const { send, on, connect } = useWebSocket();
 
+// searchQuery: 搜索好友/群组使用
 const searchQuery = ref("");
+
+// selectedFriend/selectedGroup：当前窗口正在看的会话。
+// 约束：同一时刻只能选中一个（单聊 or 群聊），切换时会清空 messages 并重新拉取。
 const selectedFriend = ref<UiFriend | null>(null);
 const selectedGroup = ref<UiGroup | null>(null);
+
+// messagesContainer：消息滚动容器 DOM
 const messagesContainer = ref<HTMLElement | null>(null);
 
+// fetchMessagesImpl/fetchGroupMessagesImpl：用于在一些回调里延迟调用 fetch（避免闭包捕获问题）。
 let fetchMessagesImpl: (friendId: string) => Promise<void> = async () => {};
 let fetchGroupMessagesImpl: (groupId: string) => Promise<void> = async () => {};
 
+// 未读计数模块：
+// - unreadCounts: { [friendId]: number }
+// - incrementUnread: 收到非当前会话消息时 +1
+// - clearUnread: 切换到会话时清零
 const { unreadCounts, incrementUnread, clearUnread } = useUnreadCounts();
+
+// 滚动模块：封装“滚动到底部”的实现细节（例如 nextTick/容器高度变化）
 const { scrollMessagesToBottom } = useScrollMessagesToBottom(messagesContainer);
+
+// 头像上传模块：用于个人信息/头像相关操作
 const { handleAvatarSelected } = useAvatarUpload(userStore);
 
+// setStoreFriends：把 UI Friend 映射到 userStore 里维护的 User（主要用于展示/在线状态更新）
 const setStoreFriends = (uiFriends: UiFriend[]) => {
   userStore.setFriends(
     uiFriends.map((f) => ({
@@ -150,6 +171,7 @@ const { friends, fetchFriends } = useFriends(
   setStoreFriends,
 );
 
+// 群组模块：拉取群列表、创建群等
 const { groups, fetchGroups, createGroup } = useGroups(() => userStore.token);
 
 // ================= 群组管理弹窗控制 =================
@@ -230,6 +252,28 @@ const filteredFriends = computed(() => {
   );
 });
 
+// setFriendStatus：统一更新某个好友的在线状态。
+// 说明：
+// - ChatSidebar 展示用的是 friends（UiFriend[]）
+// - userStore 里也维护了一份 friends（User[]）用于全局展示
+// 因此这里需要同时更新两边的数据源。
+const setFriendStatus = (friendId: string, status: "online" | "offline") => {
+  const target = friends.value.find((f) => f.id === friendId);
+  if (target) {
+    target.status = status;
+  }
+
+  if (selectedFriend.value?.id === friendId && selectedFriend.value) {
+    selectedFriend.value.status = status;
+  }
+
+  setStoreFriends(friends.value);
+};
+
+// 消息模块：
+// - fetchMessages/fetchGroupMessages：切换会话后拉取历史
+// - handleSendMessage/handleSendMedia：发送消息（内部会做乐观插入 sending）
+// - handleMessageReceive：WS 收到 message_receive 后的统一入口（回执/新消息/未读/通知）
 const {
   messages,
   fetchMessages,
@@ -249,24 +293,9 @@ const {
   send,
 });
 
+// 这里保存 fetch* 的引用，供其他回调使用
 fetchMessagesImpl = fetchMessages;
 fetchGroupMessagesImpl = fetchGroupMessages;
-
-const setFriendStatus = (
-  friendId: string,
-  status: "online" | "offline",
-): void => {
-  const target = friends.value.find((f) => f.id === friendId);
-  if (target) {
-    target.status = status;
-  }
-
-  if (selectedFriend.value?.id === friendId) {
-    selectedFriend.value.status = status;
-  }
-
-  setStoreFriends(friends.value);
-};
 
 // ================= 确认框状态聚合优化 =================
 type ConfirmAction = "logout" | "deleteFriend" | "deleteAccount";
