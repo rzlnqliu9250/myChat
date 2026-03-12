@@ -3,23 +3,28 @@ import { ref } from "vue";
 export function useUnreadCounts() {
   const unreadCounts = ref<Record<string, number>>({});
 
-  const incrementUnread = (friendId: string): void => {
+  const conversationKey = (type: "friend" | "group", id: string): string => {
+    return `${type}:${id}`;
+  };
+
+  const incrementUnread = (key: string): void => {
     unreadCounts.value = {
       ...unreadCounts.value,
-      [friendId]: (unreadCounts.value[friendId] || 0) + 1,
+      [key]: (unreadCounts.value[key] || 0) + 1,
     };
   };
 
-  const clearUnread = (friendId: string): void => {
-    if (!unreadCounts.value[friendId]) {
+  const clearUnread = (key: string): void => {
+    if (!unreadCounts.value[key]) {
       return;
     }
-    const { [friendId]: _removed, ...rest } = unreadCounts.value;
+    const { [key]: _removed, ...rest } = unreadCounts.value;
     unreadCounts.value = rest;
   };
 
   return {
     unreadCounts,
+    conversationKey,
     incrementUnread,
     clearUnread,
   };

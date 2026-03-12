@@ -206,7 +206,12 @@
         <div class="friend-info">
           <div class="friend-name">
             {{ friend.nickname || friend.username }}
-            <span v-if="unreadCounts[friend.id]" class="unread-dot"></span>
+            <span
+              v-if="unreadCounts[`friend:${friend.id}`]"
+              class="unread-badge"
+            >
+              {{ formatUnread(unreadCounts[`friend:${friend.id}`] || 0) }}
+            </span>
           </div>
           <div class="friend-status">
             <span class="status-indicator" :class="friend.status"></span>
@@ -246,7 +251,15 @@
           <span v-else>{{ group.name.charAt(0) }}</span>
         </div>
         <div class="group-info">
-          <div class="group-name">{{ group.name }}</div>
+          <div class="group-name">
+            {{ group.name }}
+            <span
+              v-if="unreadCounts[`group:${group.id}`]"
+              class="unread-badge"
+            >
+              {{ formatUnread(unreadCounts[`group:${group.id}`] || 0) }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -422,6 +435,11 @@ const editNicknameError = ref<string | null>(null);
 
 const searchLabel = "搜索好友".split("");
 const friendRequestLabel = "添加好友".split("");
+
+const formatUnread = (n: number): string => {
+  if (!n || n <= 0) return "";
+  return n > 99 ? "99+" : String(n);
+};
 
 const triggerAvatarPick = () => {
   avatarInput.value?.click();
@@ -1721,6 +1739,22 @@ const onFriendRequestUsernameInput = (e: Event) => {
   display: inline-block;
   margin-left: 8px;
   animation: unreadPulse 1.4s ease-in-out infinite;
+}
+
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: #ff1744;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
 }
 
 @keyframes unreadPulse {

@@ -145,7 +145,8 @@ let fetchGroupMessagesImpl: (groupId: string) => Promise<void> = async () => {};
 // - unreadCounts: { [friendId]: number }
 // - incrementUnread: 收到非当前会话消息时 +1
 // - clearUnread: 切换到会话时清零
-const { unreadCounts, incrementUnread, clearUnread } = useUnreadCounts();
+const { unreadCounts, conversationKey, incrementUnread, clearUnread } =
+  useUnreadCounts();
 
 // 滚动模块：封装“滚动到底部”的实现细节（例如 nextTick/容器高度变化）
 const { scrollMessagesToBottom } = useScrollMessagesToBottom(messagesContainer);
@@ -214,7 +215,7 @@ const selectFriend = async (friend: UiFriend) => {
   selectedFriend.value = friend;
   selectedGroup.value = null;
   if (friend?.id) {
-    clearUnread(friend.id);
+    clearUnread(conversationKey("friend", friend.id));
   }
   await fetchMessagesImpl(friend.id);
 };
@@ -222,6 +223,9 @@ const selectFriend = async (friend: UiFriend) => {
 const selectGroup = async (group: UiGroup) => {
   selectedGroup.value = group;
   selectedFriend.value = null;
+  if (group?.id) {
+    clearUnread(conversationKey("group", group.id));
+  }
   await fetchGroupMessagesImpl(group.id);
 };
 
@@ -288,9 +292,12 @@ const {
   selectedGroup,
   friends,
   scrollMessagesToBottom,
+  conversationKey,
   incrementUnread,
   maybeNotifyDesktop,
-  send,
+  send: (type, data) => {
+    send(type as any, data as any);
+  },
 });
 
 // 这里保存 fetch* 的引用，供其他回调使用

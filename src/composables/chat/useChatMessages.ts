@@ -13,7 +13,8 @@ export function useChatMessages(options: {
   selectedGroup: Ref<UiGroup | null>;
   friends: Ref<UiFriend[]>;
   scrollMessagesToBottom: (behavior?: ScrollBehavior) => Promise<void>;
-  incrementUnread: (friendId: string) => void;
+  conversationKey: (type: "friend" | "group", id: string) => string;
+  incrementUnread: (key: string) => void;
   maybeNotifyDesktop: (friendId: string, preview: string) => void;
   // send: 底层是 WebSocketManager.send(type, data)
   // 这里仅关心协议层（type/data），不关心 ws 如何重连/心跳。
@@ -377,6 +378,7 @@ export function useChatMessages(options: {
     if (message.groupId) {
       const me = options.currentUser.value?.id;
       const groupId = options.selectedGroup.value?.id;
+      const incomingGroupId = String(message.groupId);
 
       // 群聊：如果是我发出的消息回执（senderId==me），则用 clientMessageId 更新本地 sending。
       if (message.clientMessageId && me && message.senderId === me) {
@@ -401,7 +403,7 @@ export function useChatMessages(options: {
 
       // 群聊：只有“当前正在看的群”才追加消息。
       // 如果是我自己发的，前面已经走回执更新，所以这里要避免重复 push。
-      if (groupId && String(message.groupId) === String(groupId)) {
+      if (groupId && incomingGroupId === String(groupId)) {
         if (!me || message.senderId !== me) {
           messages.value.push({
             id: String(message.id),
@@ -426,6 +428,10 @@ export function useChatMessages(options: {
             updateTime: message.updateTime || Date.now(),
           });
           void options.scrollMessagesToBottom("smooth");
+        }
+      } else {
+        if (me && message.senderId && String(message.senderId) !== String(me)) {
+          options.incrementUnread(options.conversationKey("group", incomingGroupId));
         }
       }
       return;
@@ -512,7 +518,7 @@ export function useChatMessages(options: {
       // 非当前会话的消息：更新未读 + 桌面通知
       const incomingFriendId = String(message.senderId);
       if (!isCurrentConversation) {
-        options.incrementUnread(incomingFriendId);
+        options.incrementUnread(options.conversationKey("friend", incomingFriendId));
       }
       const preview =
         message.type === "image"
