@@ -64,7 +64,7 @@ import { animate, stagger, splitText } from "animejs";
 
 const router = useRouter();
 const userStore = useUserStore();
-const { connect, wsManager } = useWebSocket();
+const { wsManager } = useWebSocket();
 
 // UI 与动画状态
 const titleRef = ref<HTMLElement | null>(null);
@@ -177,8 +177,7 @@ const handleLogin = async () => {
     });
     userStore.setToken(loginData.token);
     wsManager.setToken(loginData.token);
-    
-    await connect();
+
     router.push("/chat");
     
   } catch (error) {
