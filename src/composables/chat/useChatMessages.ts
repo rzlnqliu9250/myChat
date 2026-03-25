@@ -84,6 +84,108 @@ export function useChatMessages(options: {
     void options.scrollMessagesToBottom();
   };
 
+  const searchMessages = async (params: {
+    q: string;
+    friendId?: string;
+    groupId?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Message[]> => {
+    const token = options.getToken();
+    if (!token) {
+      return [];
+    }
+
+    const q = typeof params.q === "string" ? params.q.trim() : "";
+    if (!q) {
+      return [];
+    }
+
+    const friendId =
+      typeof params.friendId === "string" && params.friendId
+        ? params.friendId
+        : undefined;
+    const groupId =
+      typeof params.groupId === "string" && params.groupId
+        ? params.groupId
+        : undefined;
+
+    if ((!friendId && !groupId) || (friendId && groupId)) {
+      return [];
+    }
+
+    const limit =
+      typeof params.limit === "number" && Number.isFinite(params.limit)
+        ? Math.min(200, Math.max(1, params.limit))
+        : 50;
+    const offset =
+      typeof params.offset === "number" && Number.isFinite(params.offset)
+        ? Math.max(0, params.offset)
+        : 0;
+
+    const query = new URLSearchParams();
+    query.set("q", q);
+    if (friendId) query.set("friendId", friendId);
+    if (groupId) query.set("groupId", groupId);
+    query.set("limit", String(limit));
+    query.set("offset", String(offset));
+    if (typeof params.from === "string" && params.from.trim()) {
+      query.set("from", params.from.trim());
+    }
+    if (typeof params.to === "string" && params.to.trim()) {
+      query.set("to", params.to.trim());
+    }
+
+    let data: {
+      messages: {
+        id: string;
+        senderId: string;
+        senderNickname?: string | null;
+        senderAvatarUrl?: string | null;
+        receiverId: string | null;
+        groupId?: string | null;
+        content: string;
+        type?: string;
+        mediaUrl?: string | null;
+        mediaMime?: string | null;
+        mediaSize?: number | null;
+        isRead: boolean;
+        createdAt: string;
+      }[];
+    };
+
+    try {
+      data = await apiGet<typeof data>(`/api/messages/search?${query.toString()}`, token);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      throw new Error(msg && msg !== "请求失败" ? msg : "搜索聊天记录失败");
+    }
+
+    return (data.messages || []).map((m) => {
+      const ts = new Date(m.createdAt).getTime();
+      return {
+        id: m.id,
+        senderId: m.senderId,
+        senderNickname:
+          m.senderNickname !== undefined ? m.senderNickname : null,
+        senderAvatarUrl:
+          m.senderAvatarUrl !== undefined ? m.senderAvatarUrl : null,
+        receiverId: m.receiverId ?? null,
+        groupId: (m as any).groupId ?? null,
+        content: m.content,
+        type: ((m.type as any) || "text") as any,
+        mediaUrl: m.mediaUrl ?? null,
+        mediaMime: m.mediaMime ?? null,
+        mediaSize: m.mediaSize ?? null,
+        status: m.isRead ? ("read" as const) : ("delivered" as const),
+        createTime: ts,
+        updateTime: ts,
+      } satisfies Message;
+    });
+  };
+
   const fetchGroupMessages = async (groupId: string): Promise<void> => {
     const token = options.getToken();
     if (!token) {
@@ -534,6 +636,7 @@ export function useChatMessages(options: {
     messages,
     fetchMessages,
     fetchGroupMessages,
+    searchMessages,
     handleSendMessage,
     handleSendMedia,
     handleMessageReceive,

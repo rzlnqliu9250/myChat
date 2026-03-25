@@ -162,9 +162,10 @@ const getStatusText = (status: string) => {
 <style scoped>
 .message-bubble {
   max-width: 70%;
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
   gap: 4px;
+  width: fit-content;
   margin-bottom: 12px;
 }
 

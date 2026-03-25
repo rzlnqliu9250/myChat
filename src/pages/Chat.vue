@@ -73,13 +73,48 @@
             @openGroupManage="openGroupManage"
           />
 
+          <div class="message-search-bar">
+            <input
+              v-model="messageSearchQuery"
+              class="message-search-input"
+              type="text"
+              placeholder="搜索当前会话消息"
+              :disabled="!selectedFriend && !selectedGroup"
+              @keydown.enter.prevent="handleMessageSearch"
+            />
+            <button
+              class="message-search-btn"
+              :disabled="messageSearchLoading || (!selectedFriend && !selectedGroup)"
+              @click="handleMessageSearch"
+            >
+              搜索
+            </button>
+            <button
+              v-if="messageSearchOpen"
+              class="message-search-close"
+              @click="closeMessageSearch"
+            >
+              关闭
+            </button>
+          </div>
+
           <div class="chat-messages" ref="messagesContainer">
-            <message-bubble
+            <div
               v-for="message in messages"
               :key="message.id"
-              :message="message"
-              :current-user-id="currentUser?.id || ''"
-            />
+              class="message-row"
+              :data-message-id="message.id"
+              :class="{
+                'message-row-highlight': highlightMessageId === message.id,
+                'message-row-sent': message.senderId === (currentUser?.id || ''),
+                'message-row-received': message.senderId !== (currentUser?.id || ''),
+              }"
+            >
+              <message-bubble
+                :message="message"
+                :current-user-id="currentUser?.id || ''"
+              />
+            </div>
           </div>
 
           <footer class="chat-input-area">
@@ -92,10 +127,60 @@
       </transition>
     </main>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="messageSearchOpen"
+      class="message-search-overlay"
+      @click.self="closeMessageSearch"
+    >
+      <div class="message-search-panel">
+        <div class="message-search-panel-header">
+          <div class="message-search-panel-title">搜索结果</div>
+          <button class="message-search-panel-close" @click="closeMessageSearch">
+            关闭
+          </button>
+        </div>
+
+        <div v-if="messageSearchError" class="message-search-error">
+          {{ messageSearchError }}
+        </div>
+
+        <div v-else class="message-search-results">
+          <div v-if="messageSearchLoading" class="message-search-loading">
+            加载中...
+          </div>
+          <div
+            v-else-if="messageSearchResults.length === 0"
+            class="message-search-empty"
+          >
+            暂无结果
+          </div>
+          <button
+            v-else
+            v-for="item in messageSearchResults"
+            :key="item.id"
+            class="message-search-item"
+            @click="jumpToSearchedMessage(item.id)"
+          >
+            <div class="message-search-item-top">
+              <span class="message-search-item-sender">
+                {{ item.senderNickname || (item.senderId === currentUser?.id ? '我' : '对方') }}
+              </span>
+              <span class="message-search-item-time">{{ formatSearchTime(item.createTime) }}</span>
+            </div>
+            <div class="message-search-item-content">
+              {{ item.type === 'image' ? '[图片]' : item.type === 'video' ? '[视频]' : item.content }}
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from "vue";
+import { ref, computed, onMounted, reactive, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "../stores/userStore";
 import { useWebSocket } from "../composables/useWebSocket";
@@ -282,6 +367,7 @@ const {
   messages,
   fetchMessages,
   fetchGroupMessages,
+  searchMessages,
   handleSendMessage,
   handleSendMedia,
   handleMessageReceive,
@@ -303,6 +389,95 @@ const {
 // 这里保存 fetch* 的引用，供其他回调使用
 fetchMessagesImpl = fetchMessages;
 fetchGroupMessagesImpl = fetchGroupMessages;
+
+const messageSearchQuery = ref("");
+const messageSearchOpen = ref(false);
+const messageSearchLoading = ref(false);
+const messageSearchError = ref<string | null>(null);
+const messageSearchResults = ref<any[]>([]);
+const highlightMessageId = ref<string | null>(null);
+
+const closeMessageSearch = () => {
+  messageSearchOpen.value = false;
+  messageSearchLoading.value = false;
+  messageSearchError.value = null;
+  messageSearchResults.value = [];
+};
+
+const handleMessageSearch = async () => {
+  if (!selectedFriend.value && !selectedGroup.value) {
+    return;
+  }
+
+  const q = messageSearchQuery.value.trim();
+  if (!q) {
+    closeMessageSearch();
+    return;
+  }
+
+  messageSearchOpen.value = true;
+  messageSearchLoading.value = true;
+  messageSearchError.value = null;
+  messageSearchResults.value = [];
+
+  try {
+    const friendId = selectedFriend.value?.id;
+    const groupId = selectedGroup.value?.id;
+    const results = await searchMessages({
+      q,
+      friendId: friendId || undefined,
+      groupId: groupId || undefined,
+      limit: 100,
+      offset: 0,
+    });
+    messageSearchResults.value = results;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    messageSearchError.value = msg || "搜索失败";
+  } finally {
+    messageSearchLoading.value = false;
+  }
+};
+
+const formatSearchTime = (ts: number) => {
+  const d = new Date(ts);
+  const date = d.toLocaleDateString();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${date} ${time}`;
+};
+
+const jumpToSearchedMessage = async (messageId: string) => {
+  closeMessageSearch();
+  highlightMessageId.value = messageId;
+  await nextTick();
+
+  const container = messagesContainer.value;
+  if (!container) {
+    return;
+  }
+
+  const escapeSelector = (value: string) => {
+    const cssAny = (globalThis as any).CSS;
+    if (cssAny && typeof cssAny.escape === "function") {
+      return cssAny.escape(value);
+    }
+    return value.replace(/"/g, "\\\"");
+  };
+
+  const el = container.querySelector(
+    `[data-message-id="${escapeSelector(String(messageId))}"]`,
+  ) as HTMLElement | null;
+
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  window.setTimeout(() => {
+    if (highlightMessageId.value === messageId) {
+      highlightMessageId.value = null;
+    }
+  }, 2000);
+};
 
 // ================= 确认框状态聚合优化 =================
 type ConfirmAction = "logout" | "deleteFriend" | "deleteAccount";
@@ -604,6 +779,174 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+}
+
+.message-row {
+  display: flex;
+  width: 100%;
+}
+
+.message-row-sent {
+  justify-content: flex-end;
+}
+
+.message-row-received {
+  justify-content: flex-start;
+}
+
+.message-search-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+}
+
+.message-search-input {
+  flex: 1;
+  height: 38px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 0 12px;
+  outline: none;
+}
+
+.message-search-input:disabled {
+  background: #f7f7f7;
+}
+
+.message-search-btn,
+.message-search-close,
+.message-search-panel-close {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  cursor: pointer;
+}
+
+.message-search-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.message-row-highlight {
+  animation: msg-highlight 2s ease;
+}
+
+@keyframes msg-highlight {
+  0% {
+    background: rgba(255, 230, 120, 0.65);
+    border-radius: 12px;
+  }
+  70% {
+    background: rgba(255, 230, 120, 0.35);
+    border-radius: 12px;
+  }
+  100% {
+    background: transparent;
+    border-radius: 12px;
+  }
+}
+
+.message-search-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  z-index: 2500;
+}
+
+.message-search-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(420px, 92vw);
+  background: #fff;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.message-search-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.message-search-panel-title {
+  font-weight: 800;
+}
+
+.message-search-error {
+  padding: 14px;
+  color: #d32f2f;
+}
+
+.message-search-results {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-search-loading,
+.message-search-empty {
+  padding: 14px;
+  color: #777;
+}
+
+.message-search-item {
+  text-align: left;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.message-search-item:hover {
+  border-color: #cfd8dc;
+  background: #fafafa;
+}
+
+.message-search-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #666;
+  font-size: 12px;
+}
+
+.message-search-item-sender {
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-search-item-time {
+  flex-shrink: 0;
+}
+
+.message-search-item-content {
+  margin-top: 6px;
+  color: #111;
+  font-size: 13px;
+  line-height: 1.35;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .chat-fade-slide-enter-active,

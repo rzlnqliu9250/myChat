@@ -7,6 +7,177 @@ import { requireAuth } from "../middleware/auth";
 
 export const messagesRouter = Router();
 
+ messagesRouter.get("/messages/search", requireAuth, async (req, res, next) => {
+     try {
+         const userId = req.userId;
+         if (!userId) {
+             res.status(401).json({ error: "Unauthorized" });
+             return;
+         }
+
+         const friendId =
+             typeof req.query.friendId === "string"
+                 ? req.query.friendId
+                 : undefined;
+         const groupId =
+             typeof req.query.groupId === "string" ? req.query.groupId : undefined;
+         const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+         if ((!friendId && !groupId) || (friendId && groupId)) {
+             res.status(400).json({ error: "friendId or groupId is required" });
+             return;
+         }
+
+         if (!q) {
+             res.status(400).json({ error: "q is required" });
+             return;
+         }
+
+         const limitRaw = req.query.limit;
+         const offsetRaw = req.query.offset;
+         const limit =
+             typeof limitRaw === "string" && Number.isFinite(Number(limitRaw))
+                 ? Math.min(200, Math.max(1, Number(limitRaw)))
+                 : 50;
+         const offset =
+             typeof offsetRaw === "string" && Number.isFinite(Number(offsetRaw))
+                 ? Math.max(0, Number(offsetRaw))
+                 : 0;
+
+         const fromRaw = req.query.from;
+         const toRaw = req.query.to;
+         const from = typeof fromRaw === "string" ? fromRaw.trim() : "";
+         const to = typeof toRaw === "string" ? toRaw.trim() : "";
+
+         if (groupId) {
+             const membership = await supabase
+                 .from("group_members")
+                 .select("group_id")
+                 .eq("group_id", groupId)
+                 .eq("user_id", userId)
+                 .maybeSingle();
+
+             if (membership.error) {
+                 next(membership.error);
+                 return;
+             }
+
+             if (!membership.data) {
+                 res.status(403).json({ error: "forbidden" });
+                 return;
+             }
+         }
+
+         const buildQuery = (select: string) => {
+             let query = supabase.from("messages").select(select);
+
+             if (groupId) {
+                 query = query.eq("group_id", groupId);
+             } else {
+                 query = query.or(
+                     `and(sender_id.eq.${userId},receiver_id.eq.${friendId}),and(sender_id.eq.${friendId},receiver_id.eq.${userId})`,
+                 );
+             }
+
+             query = query.ilike("content", `%${q}%`);
+
+             if (from) {
+                 query = query.gte("created_at", from);
+             }
+             if (to) {
+                 query = query.lte("created_at", to);
+             }
+
+             return query
+                 .order("created_at", { ascending: false })
+                 .range(offset, offset + limit - 1);
+         };
+
+         let result = await buildQuery(
+             "id, sender_id, receiver_id, group_id, content, is_read, created_at, message_type, media_url, media_mime, media_size",
+         );
+
+         if (
+             result.error &&
+             (result.error as any).message &&
+             String((result.error as any).message).includes("message_type")
+         ) {
+             result = await buildQuery(
+                 "id, sender_id, receiver_id, group_id, content, is_read, created_at, type, media_url, media_mime, media_size",
+             );
+         }
+
+         if (result.error) {
+             next(result.error);
+             return;
+         }
+
+         const rows = (result.data || []) as any[];
+
+         let senderMap = new Map<string, any>();
+         if (groupId) {
+             const senderIds = Array.from(
+                 new Set(
+                     rows
+                         .map((m: any) => String(m.sender_id || ""))
+                         .filter(Boolean),
+                 ),
+             );
+
+             if (senderIds.length) {
+                 const senders = await supabase
+                     .from("users")
+                     .select("id, username, nickname, avatar_url")
+                     .in("id", senderIds);
+
+                 if (senders.error) {
+                     next(senders.error);
+                     return;
+                 }
+
+                 (senders.data || []).forEach((u: any) => {
+                     senderMap.set(String(u.id), {
+                         nickname: u.nickname ?? u.username,
+                         avatarUrl: u.avatar_url ?? null,
+                     });
+                 });
+             }
+         }
+
+         res.json({
+             messages: rows.map((m: any) => ({
+                 ...(groupId
+                     ? senderMap.get(String(m.sender_id))
+                         ? {
+                               senderNickname: senderMap.get(String(m.sender_id))
+                                   .nickname,
+                               senderAvatarUrl: senderMap.get(
+                                   String(m.sender_id),
+                               ).avatarUrl,
+                           }
+                         : { senderNickname: null, senderAvatarUrl: null }
+                     : {}),
+                 id: String(m.id),
+                 senderId: m.sender_id,
+                 receiverId: m.receiver_id ?? null,
+                 groupId: m.group_id ?? null,
+                 content: m.content,
+                 type:
+                     (m as any).message_type ||
+                     (m as any).type ||
+                     ("text" as const),
+                 mediaUrl: (m as any).media_url ?? null,
+                 mediaMime: (m as any).media_mime ?? null,
+                 mediaSize: (m as any).media_size ?? null,
+                 isRead: m.is_read,
+                 createdAt: m.created_at,
+             })),
+         });
+     } catch (err) {
+         next(err);
+     }
+ });
+
 messagesRouter.get(
     "/messages/:friendId",
     requireAuth,
