@@ -25,6 +25,7 @@ export interface Message {
   mediaUrl?: string | null;
   mediaMime?: string | null;
   mediaSize?: number | null;
+  isFavorited?: boolean;
   status: MessageStatusValue;
   createTime: number;
   updateTime: number;

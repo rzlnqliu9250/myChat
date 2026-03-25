@@ -37,6 +37,7 @@
       :selected-friend-id="selectedFriend?.id || null"
       :selected-group-id="selectedGroup?.id || null"
       :unread-counts="unreadCounts"
+      :favorites="favorites"
       @logout="handleLogout"
       @deleteAccount="handleDeleteAccount"
       @sendFriendRequest="sendFriendRequest"
@@ -44,6 +45,7 @@
       @rejectRequest="rejectRequest"
       @selectFriend="selectFriend"
       @selectGroup="selectGroup"
+      @selectFavorite="handleSelectFavorite"
       @createGroup="handleCreateGroup"
       @updateNickname="handleUpdateNickname"
       @deleteFriend="handleDeleteFriend"
@@ -113,6 +115,7 @@
               <message-bubble
                 :message="message"
                 :current-user-id="currentUser?.id || ''"
+                @toggle-favorite="handleToggleFavorite"
               />
             </div>
           </div>
@@ -191,7 +194,7 @@ import ChatSidebar from "../components/chat/ChatSidebar.vue";
 import ChatHeader from "../components/chat/ChatHeader.vue";
 import ConfirmCards from "../components/ui/ConfirmCards.vue";
 import GroupManageModal from "../components/chat/GroupManageModal.vue"; // 引入新组件
-import { apiDelete, apiPatch } from "../services/api"; // 去除了 apiGet 和 apiPost，因为主文件不再需要
+import { apiDelete, apiGet, apiPatch, apiRequest } from "../services/api"; // 去除了 apiPost，因为主文件不再需要
 import { useAvatarUpload } from "../composables/chat/useAvatarUpload";
 import { useDesktopNotify } from "../composables/chat/useDesktopNotify";
 import { useFriendRequests } from "../composables/chat/useFriendRequests";
@@ -201,6 +204,7 @@ import { useScrollMessagesToBottom } from "../composables/chat/useScrollMessages
 import { useUnreadCounts } from "../composables/chat/useUnreadCounts";
 import { useChatMessages } from "../composables/chat/useChatMessages";
 import type { UiFriend, UiGroup } from "../types/chat";
+import type { Message } from "../models/Message";
 
 // Chat.vue 是“聊天主页面”的编排层（Orchestrator）：
 // - 负责把各种 composables 组装起来（好友列表/群组/消息/未读/通知/头像上传等）
@@ -221,6 +225,9 @@ const selectedGroup = ref<UiGroup | null>(null);
 
 // messagesContainer：消息滚动容器 DOM
 const messagesContainer = ref<HTMLElement | null>(null);
+
+// 收藏消息列表
+const favorites = ref<Message[]>([]);
 
 // fetchMessagesImpl/fetchGroupMessagesImpl：用于在一些回调里延迟调用 fetch（避免闭包捕获问题）。
 let fetchMessagesImpl: (friendId: string) => Promise<void> = async () => {};
@@ -402,6 +409,56 @@ const closeMessageSearch = () => {
   messageSearchLoading.value = false;
   messageSearchError.value = null;
   messageSearchResults.value = [];
+};
+
+const handleToggleFavorite = async (payload: {
+  messageId: string;
+  favorited: boolean;
+}) => {
+  const token = userStore.token;
+  if (!token) {
+    return;
+  }
+
+  const messageIdText = String(payload.messageId);
+  if (!/^\d+$/.test(messageIdText)) {
+    return;
+  }
+
+  const idx = messages.value.findIndex((m) => String(m.id) === messageIdText);
+  if (idx < 0) {
+    return;
+  }
+
+  const existing = messages.value[idx];
+  if (!existing) {
+    return;
+  }
+
+  const prev = Boolean(existing.isFavorited);
+  messages.value[idx] = { ...existing, isFavorited: payload.favorited };
+
+  try {
+    if (payload.favorited) {
+      await apiRequest<{ ok: boolean }>(
+        "/api/favorites",
+        {
+          method: "POST",
+          body: JSON.stringify({ messageId: Number(messageIdText) }),
+        },
+        token,
+      );
+    } else {
+      await apiDelete<void>(`/api/favorites/${messageIdText}`, token);
+    }
+    // 更新收藏列表
+    await fetchFavorites();
+  } catch {
+    const latest = messages.value[idx];
+    if (latest) {
+      messages.value[idx] = { ...latest, isFavorited: prev };
+    }
+  }
 };
 
 const handleMessageSearch = async () => {
@@ -599,6 +656,61 @@ const handleDeleteAccount = () => {
   });
 };
 
+// 获取收藏消息列表
+const fetchFavorites = async () => {
+  const token = userStore.token;
+  if (!token) return;
+
+  try {
+    const data = await apiGet<{
+      messages: (Omit<Message, "createTime" | "updateTime"> & {
+        createdAt?: string;
+        createTime?: number;
+        updateTime?: number;
+      })[];
+    }>("/api/favorites", token);
+
+    favorites.value = (data.messages || []).map((m: (typeof data.messages)[number]) => {
+      const createdAt = (m as any).createdAt;
+      const ts = typeof createdAt === "string" ? new Date(createdAt).getTime() : Date.now();
+      return {
+        ...(m as any),
+        createTime: typeof (m as any).createTime === "number" ? (m as any).createTime : ts,
+        updateTime: typeof (m as any).updateTime === "number" ? (m as any).updateTime : ts,
+      } as Message;
+    });
+  } catch (error) {
+    console.error('获取收藏消息失败:', error);
+  }
+};
+
+// 处理选择收藏消息
+const handleSelectFavorite = async (message: Message) => {
+  // 如果是群聊消息，切换到群聊
+  if (message.groupId) {
+    const group = groups.value.find(g => g.id === message.groupId);
+    if (group) {
+      await selectGroup(group);
+    }
+  }
+  // 如果是单聊消息，切换到对应的好友
+  else if (message.receiverId && message.senderId) {
+    const friendId = message.senderId === currentUser.value?.id ? message.receiverId : message.senderId;
+    const friend = friends.value.find(f => f.id === friendId);
+    if (friend) {
+      await selectFriend(friend);
+    }
+  }
+  
+  // 滚动到对应的消息
+  nextTick(() => {
+    const messageElement = document.querySelector(`[data-message-id="${message.id}"]`);
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+};
+
 const handleUpdateNickname = (
   payload: { nickname: string },
   callbacks: { onSuccess: () => void; onError: (msg: string) => void },
@@ -645,6 +757,7 @@ onMounted(() => {
   void fetchFriends().catch((e) => console.error(e));
   void fetchIncomingRequests().catch((e) => console.error(e));
   void fetchGroups().catch((e) => console.error(e));
+  void fetchFavorites().catch((e) => console.error(e));
 
   on(
     WebSocketEvent.GROUP_MEMBERSHIP_CHANGED,

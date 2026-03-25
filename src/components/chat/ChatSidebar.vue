@@ -180,6 +180,16 @@
       />
       <label class="list-tab-label" for="chat-tab-groups">群聊</label>
 
+      <input
+        id="chat-tab-favorites"
+        class="list-tab-input"
+        type="radio"
+        name="chat-list-tab"
+        value="favorites"
+        v-model="activeListTab"
+      />
+      <label class="list-tab-label" for="chat-tab-favorites">收藏</label>
+
       <div class="list-tab-glider"></div>
     </div>
 
@@ -227,7 +237,7 @@
       </div>
     </div>
 
-    <div v-else class="group-list">
+    <div v-else-if="activeListTab === 'groups'" class="group-list">
       <div class="group-list-header">
         <h4 class="group-list-title">群聊列表</h4>
         <button class="group-create-button" @click="openCreateGroup">
@@ -260,6 +270,34 @@
               {{ formatUnread(unreadCounts[`group:${group.id}`] || 0) }}
             </span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="activeListTab === 'favorites'" class="favorites-list">
+      <h4 class="favorites-list-title">收藏消息</h4>
+      <div v-if="favorites.length === 0" class="favorites-empty">
+        <p>暂无收藏消息</p>
+      </div>
+      <div
+        v-for="msg in favorites"
+        :key="msg.id"
+        class="favorite-item"
+        @click="emit('selectFavorite', msg)"
+      >
+        <div class="favorite-avatar">
+          <img
+            v-if="msg.senderAvatarUrl"
+            class="avatar-image"
+            :src="msg.senderAvatarUrl"
+            alt="avatar"
+          />
+          <span v-else>{{ (msg.senderNickname || '?').charAt(0) }}</span>
+        </div>
+        <div class="favorite-info">
+          <div class="favorite-sender">{{ msg.senderNickname || '未知用户' }}</div>
+          <div class="favorite-content">{{ getFavoriteContent(msg) }}</div>
+          <div class="favorite-time">{{ formatTime(msg.createTime) }}</div>
         </div>
       </div>
     </div>
@@ -368,6 +406,7 @@
 import { ref } from "vue";
 
 import type { IncomingRequest, UiFriend, UiGroup } from "../../types/chat";
+import type { Message } from "../../models/Message";
 
 type AnyUser = {
   id: string;
@@ -392,6 +431,7 @@ const props = defineProps<{
   groups: UiGroup[];
   selectedGroupId: string | null;
   unreadCounts: Record<string, number>;
+  favorites: Message[];
 }>();
 
 const emit = defineEmits<{
@@ -404,6 +444,7 @@ const emit = defineEmits<{
   (e: "rejectRequest", requestId: string): void;
   (e: "selectFriend", friend: UiFriend): void;
   (e: "selectGroup", group: UiGroup): void;
+  (e: "selectFavorite", message: Message): void;
   (
     e: "createGroup",
     payload: { name: string; memberIds: string[] },
@@ -420,7 +461,7 @@ const emit = defineEmits<{
 
 const avatarInput = ref<HTMLInputElement | null>(null);
 
-const activeListTab = ref<"friends" | "groups">("friends");
+const activeListTab = ref<"friends" | "groups" | "favorites">('friends');
 
 const createGroupOpen = ref(false);
 const createGroupName = ref("");
@@ -439,6 +480,24 @@ const friendRequestLabel = "添加好友".split("");
 const formatUnread = (n: number): string => {
   if (!n || n <= 0) return "";
   return n > 99 ? "99+" : String(n);
+};
+
+const formatTime = (timestamp: number | string | null | undefined): string => {
+  if (timestamp === null || timestamp === undefined) {
+    return "";
+  }
+
+  const ms =
+    typeof timestamp === "number"
+      ? timestamp
+      : new Date(timestamp).getTime();
+
+  if (!Number.isFinite(ms)) {
+    return "";
+  }
+
+  const date = new Date(ms);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
 const triggerAvatarPick = () => {
@@ -568,6 +627,21 @@ const onSearchInput = (e: Event) => {
 const onFriendRequestUsernameInput = (e: Event) => {
   const input = e.target as HTMLInputElement | null;
   emit("update:friendRequestUsername", input?.value || "");
+};
+
+const getFavoriteContent = (message: Message): string => {
+  switch (message.type) {
+    case "image":
+      return "[图片]";
+    case "video":
+      return "[视频]";
+    case "file":
+      return "[文件]";
+    case "system":
+      return "[系统消息]";
+    default:
+      return message.content || "无内容";
+  }
 };
 </script>
 
@@ -1201,13 +1275,14 @@ const onFriendRequestUsernameInput = (e: Event) => {
 .list-tabs {
   display: flex;
   position: relative;
-  width: fit-content;
+  width: calc(100% - 30px);
   margin: 12px 15px 0;
   padding: 0;
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 999px;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .list-tab-input {
@@ -1215,19 +1290,23 @@ const onFriendRequestUsernameInput = (e: Event) => {
 }
 
 .list-tab-label {
-  min-width: 88px;
-  padding: 10px 18px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   font-weight: 800;
+  line-height: 1;
   color: #111;
   cursor: pointer;
   position: relative;
   z-index: 2;
   transition: color 0.25s ease;
   user-select: none;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .list-tab-label:hover {
@@ -1243,7 +1322,7 @@ const onFriendRequestUsernameInput = (e: Event) => {
   top: 0;
   bottom: 0;
   left: 0;
-  width: 50%;
+  width: 33.333%;
   background: #0001f0;
   border-radius: 999px;
   z-index: 1;
@@ -1256,6 +1335,10 @@ const onFriendRequestUsernameInput = (e: Event) => {
 
 #chat-tab-groups:checked ~ .list-tab-glider {
   transform: translateX(100%);
+}
+
+#chat-tab-favorites:checked ~ .list-tab-glider {
+  transform: translateX(200%);
 }
 
 .friend-list {
@@ -1805,4 +1888,85 @@ const onFriendRequestUsernameInput = (e: Event) => {
 .status-indicator.away {
   background-color: #ffc107;
 }
+
+/* 收藏消息列表样式 */
+.favorites-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+}
+
+.favorites-list-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.favorites-empty {
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  padding: 20px 0;
+}
+
+.favorite-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-bottom: 8px;
+}
+
+.favorite-item:hover {
+  background-color: #f0f0f0;
+}
+
+.favorite-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #0001f0;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.favorite-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.favorite-sender {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.favorite-content {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.favorite-time {
+  font-size: 11px;
+  color: #999;
+}
+
+
 </style>

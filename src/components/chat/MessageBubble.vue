@@ -6,6 +6,7 @@
       received: message.senderId !== currentUserId,
       'group-received': message.groupId && message.senderId !== currentUserId,
     }"
+    :data-message-id="message.id"
   >
     <template v-if="message.groupId && message.senderId !== currentUserId">
       <div class="group-sender-avatar">
@@ -48,6 +49,16 @@
 
         <div class="message-meta">
           <span class="message-time">{{ formatTime(message.createTime) }}</span>
+          <button
+            class="message-favorite-btn"
+            :class="{ active: Boolean(message.isFavorited) }"
+            :disabled="!isPersistedMessage"
+            @click="toggleFavorite"
+            title="收藏"
+            type="button"
+          >
+            {{ Boolean(message.isFavorited) ? "★" : "☆" }}
+          </button>
         </div>
       </div>
     </template>
@@ -77,6 +88,16 @@
       </div>
       <div class="message-meta">
         <span class="message-time">{{ formatTime(message.createTime) }}</span>
+        <button
+          class="message-favorite-btn"
+          :class="{ active: Boolean(message.isFavorited) }"
+          :disabled="!isPersistedMessage"
+          @click="toggleFavorite"
+          title="收藏"
+          type="button"
+        >
+          {{ Boolean(message.isFavorited) ? "★" : "☆" }}
+        </button>
         <span
           v-if="message.senderId === currentUserId && !message.groupId"
           class="message-status"
@@ -107,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { MessageStatus } from "../../models/Message";
 import type { Message } from "../../models/Message";
 
@@ -117,6 +138,25 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  (
+    e: "toggle-favorite",
+    payload: { messageId: string; favorited: boolean },
+  ): void;
+}>();
+
+const isPersistedMessage = computed(() => /^\d+$/.test(String(props.message.id)));
+
+const toggleFavorite = () => {
+  if (!isPersistedMessage.value) {
+    return;
+  }
+  emit("toggle-favorite", {
+    messageId: String(props.message.id),
+    favorited: !Boolean(props.message.isFavorited),
+  });
+};
 
 const previewOpen = ref(false);
 const previewUrl = ref<string | null>(null);
@@ -274,6 +314,25 @@ const getStatusText = (status: string) => {
   gap: 8px;
   font-size: 11px;
   color: #999;
+}
+
+.message-favorite-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  color: inherit;
+}
+
+.message-favorite-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.message-favorite-btn.active {
+  color: #f5b301;
 }
 
 .message-bubble.sent .message-meta {

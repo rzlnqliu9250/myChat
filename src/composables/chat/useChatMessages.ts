@@ -4,6 +4,48 @@ import type { Message } from "../../models/Message";
 import type { UiFriend, UiGroup } from "../../types/chat";
 import { WebSocketEvent } from "../../models/WebSocket";
 
+async function applyFavoritesToMessages(params: {
+  token: string;
+  messages: Message[];
+}): Promise<void> {
+  const { token } = params;
+  const list = params.messages;
+  if (!list.length) {
+    return;
+  }
+
+  const ids = Array.from(
+    new Set(
+      list
+        .map((m) => String(m.id))
+        .filter((id) => /^\d+$/.test(id)),
+    ),
+  );
+
+  if (!ids.length) {
+    return;
+  }
+
+  const data = await apiRequest<{
+    favorites: Record<string, boolean>;
+  }>(
+    "/api/favorites/status",
+    {
+      method: "POST",
+      body: JSON.stringify({ messageIds: ids.map((v) => Number(v)) }),
+    },
+    token,
+  );
+
+  const favorites = data?.favorites || {};
+  list.forEach((m) => {
+    const key = String(m.id);
+    if (Object.prototype.hasOwnProperty.call(favorites, key)) {
+      m.isFavorited = Boolean(favorites[key]);
+    }
+  });
+}
+
 export function useChatMessages(options: {
   // getToken/currentUser/selectedFriend/selectedGroup/friends 等依赖由 Chat.vue 传入。
   // 这样这个 composable 不依赖全局 store：更容易复用/测试。
@@ -80,6 +122,12 @@ export function useChatMessages(options: {
         updateTime: ts,
       } satisfies Message;
     });
+
+    try {
+      await applyFavoritesToMessages({ token, messages: messages.value });
+    } catch {
+      // ignore
+    }
 
     void options.scrollMessagesToBottom();
   };
@@ -245,6 +293,12 @@ export function useChatMessages(options: {
         updateTime: ts,
       } satisfies Message;
     });
+
+    try {
+      await applyFavoritesToMessages({ token, messages: messages.value });
+    } catch {
+      // ignore
+    }
 
     void options.scrollMessagesToBottom();
   };
