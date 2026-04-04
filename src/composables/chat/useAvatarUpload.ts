@@ -1,3 +1,8 @@
+
+/**
+ * 处理用户头像上传
+ * 组合式函数：上传用户选择的文件到服务器，更新用户头像。
+ */
 import { apiRequest } from "../../services/api";
 
 export function useAvatarUpload(userStore: {

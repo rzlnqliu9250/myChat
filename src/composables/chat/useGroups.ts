@@ -1,3 +1,8 @@
+
+/**
+ * 处理群聊列表
+ * 组合式函数：管理群聊列表的显示、加载等。
+ */
 import { ref } from "vue";
 import { apiGet, apiPost } from "../../services/api";
 import type { UiGroup } from "../../types/chat";

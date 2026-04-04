@@ -1,3 +1,8 @@
+
+/**
+ * 处理未读消息数量
+ * 组合式函数：管理未读消息数量的显示、增加、减少等。
+ */
 import { ref } from "vue";
 
 export function useUnreadCounts() {

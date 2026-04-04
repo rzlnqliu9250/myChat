@@ -115,6 +115,7 @@ export class WebSocketManager {
         this.ws = new WebSocket(`${this.url}?token=${this.token}`);
 
         this.ws.onopen = () => {
+          console.log(`[WebSocket] 连接成功: ${new Date().toISOString()}`);
           // onopen 代表握手完成：连接正式可用
           this.isConnected = true;
           this.isConnecting = false;
@@ -142,6 +143,7 @@ export class WebSocketManager {
         };
 
         this.ws.onclose = (event) => {
+          console.log(`[WebSocket] 连接断开: ${new Date().toISOString()}, code: ${event.code}`);
           // onclose：连接已关闭（可能是断网、服务端主动断开、鉴权失败、浏览器 tab 关闭等）
           // 注意：此处会触发自动重连（autoReconnect）。
           this.isConnected = false;

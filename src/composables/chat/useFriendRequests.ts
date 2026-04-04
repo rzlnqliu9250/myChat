@@ -1,3 +1,7 @@
+/**
+ * 处理好友申请
+ * 组合式函数：管理好友申请的显示、发送、接收等。
+ */
 import { ref } from "vue";
 import { apiGet, apiPost } from "../../services/api";
 import type { IncomingRequest } from "../../types/chat";

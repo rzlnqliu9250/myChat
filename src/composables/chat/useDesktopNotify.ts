@@ -1,3 +1,8 @@
+
+/**
+ * 处理桌面通知
+ * 组合式函数：管理桌面通知的显示、隐藏等。
+ */
 import type { Ref } from "vue";
 import type { UiFriend } from "../../types/chat";
 

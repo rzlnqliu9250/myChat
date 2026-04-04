@@ -1,3 +1,8 @@
+
+/**
+ * 处理滚动消息到最底部
+ * 组合式函数：滚动到聊天消息的最底部，保持消息顺序。
+ */
 import { nextTick, type Ref } from "vue";
 
 export function useScrollMessagesToBottom(container: Ref<HTMLElement | null>) {

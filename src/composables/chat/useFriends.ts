@@ -1,3 +1,8 @@
+
+/**
+ * 处理好友列表
+ * 组合式函数：管理好友列表的显示、加载等。
+ */
 import { ref } from "vue";
 import { apiGet } from "../../services/api";
 import type { ApiFriend, UiFriend } from "../../types/chat";

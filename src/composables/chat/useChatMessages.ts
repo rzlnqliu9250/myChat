@@ -1,3 +1,7 @@
+/**
+ * 处理聊天消息
+ * 组合式函数：管理聊天消息的显示、发送、接收等。
+ */
 import { ref, type ComputedRef, type Ref } from "vue";
 import { apiGet, apiRequest } from "../../services/api";
 import type { Message } from "../../models/Message";
