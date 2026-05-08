@@ -63,6 +63,10 @@ export class WebSocketManager {
   private heartbeatInterval: number | null = null;
   private reconnectTimer: number | null = null;
 
+  private isManuallyDisconnected: boolean = false;
+  private isOffline: boolean = typeof navigator !== "undefined" ? !navigator.onLine : false;
+  private onlineDetectedAt: number | null = null;
+
   // reconnectAttempts: 当前累计重连次数。
   // maxReconnectAttempts: 最大重连次数（达到后停止自动重连，避免无限循环）。
   // reconnectDelay: 初始重连延迟（会叠加指数退避）。
@@ -75,7 +79,7 @@ export class WebSocketManager {
   // 说明：这里心跳只是“客户端主动 ping”，服务端回 pong。
   // 若网络断开，大多情况下浏览器会触发 onclose，从而开始 autoReconnect。
   private readonly maxReconnectDelay: number = 30000; // 最大重连延迟 30s
-  private readonly heartbeatIntervalTime: number = 30000; // 心跳间隔 30s
+  private readonly heartbeatIntervalTime: number = 1000; // 心跳间隔 1s
 
   // events: 对外暴露的事件总线。
   // 典型使用方式：
@@ -86,7 +90,29 @@ export class WebSocketManager {
   constructor(url: string, token: string) {
     this.url = url;
     this.token = token;
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("offline", this.handleOffline);
+      window.addEventListener("online", this.handleOnline);
+    }
   }
+
+  private handleOffline = (): void => {
+    this.isOffline = true;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  };
+
+  private handleOnline = (): void => {
+    this.isOffline = false;
+    this.onlineDetectedAt = Date.now();
+    if (!this.isConnected && !this.isConnecting && this.token) {
+      void this.connect();
+    }
+  };
 
   public setToken(token: string): void {
     // 只更新 token，不主动 connect/disconnect。
@@ -99,6 +125,13 @@ export class WebSocketManager {
    */
   public connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      this.isManuallyDisconnected = false;
+
+      if (this.isOffline) {
+        resolve();
+        return;
+      }
+
       // 防重复：如果已经连上或正在连接，则认为 connect 已满足。
       // 这样可以避免多个组件同时调用 connect() 导致并发创建多条连接。
       if (this.isConnected || this.isConnecting) {
@@ -116,6 +149,14 @@ export class WebSocketManager {
 
         this.ws.onopen = () => {
           console.log(`[WebSocket] 连接成功: ${new Date().toISOString()}`);
+
+          if (this.onlineDetectedAt !== null) {
+            const elapsedMs = Date.now() - this.onlineDetectedAt;
+            console.log(
+              `[WebSocket] 从检测到网络恢复到重连成功耗时: ${elapsedMs}ms`,
+            );
+            this.onlineDetectedAt = null;
+          }
           // onopen 代表握手完成：连接正式可用
           this.isConnected = true;
           this.isConnecting = false;
@@ -156,6 +197,10 @@ export class WebSocketManager {
           this.events.emit(WebSocketEvent.DISCONNECT, event.code, event.reason);
 
           // 自动重连
+          if (this.isManuallyDisconnected) {
+            return;
+          }
+
           this.autoReconnect();
         };
 
@@ -181,6 +226,8 @@ export class WebSocketManager {
     // - 登出
     // - token 变化后重连（先断开再 connect）
     // 注意：这里会清理重连计时器，避免主动断开后仍然自动重连。
+
+    this.isManuallyDisconnected = true;
     // 清除重连计时器
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -293,6 +340,10 @@ export class WebSocketManager {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    if (this.isOffline) {
+      return;
     }
 
     // 达到最大重连次数，停止重连
