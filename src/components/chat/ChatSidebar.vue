@@ -43,6 +43,14 @@
         </div>
       </div>
       <div class="header-actions">
+        <button
+          class="ws-reconnect-test-button"
+          :disabled="!isConnected"
+          title="断开 WebSocket 并观察指数退避重连耗时（见控制台）"
+          @click="handleWsReconnectTest"
+        >
+          <span>{{ isConnected ? "测试WS重连" : "WS未连接" }}</span>
+        </button>
         <button class="logout-button" @click="emit('logout')">
           <span>退出登录</span>
         </button>
@@ -404,6 +412,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useWebSocket } from "../../composables/useWebSocket";
 
 import type { IncomingRequest, UiFriend, UiGroup } from "../../types/chat";
 import type { Message } from "../../models/Message";
@@ -458,6 +467,12 @@ const emit = defineEmits<{
   (e: "deleteFriend", friend: UiFriend): void;
   (e: "avatarSelected", file: File): void;
 }>();
+
+const { isConnected, simulateDisconnectForTest } = useWebSocket();
+
+const handleWsReconnectTest = (): void => {
+  simulateDisconnectForTest();
+};
 
 const avatarInput = ref<HTMLInputElement | null>(null);
 
@@ -825,6 +840,30 @@ const getFavoriteContent = (message: Message): string => {
 .friend-status {
   font-size: 12px;
   color: #666;
+}
+
+.ws-reconnect-test-button {
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #5c6bc0;
+  border-radius: 25px;
+  color: #5c6bc0;
+  white-space: nowrap;
+}
+
+.ws-reconnect-test-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: #bbb;
+  color: #999;
+}
+
+.ws-reconnect-test-button:not(:disabled):hover {
+  color: #fff;
+  background: #5c6bc0;
 }
 
 .logout-button {

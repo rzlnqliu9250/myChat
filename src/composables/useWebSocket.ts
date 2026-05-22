@@ -43,6 +43,7 @@ export function useWebSocket() {
     send: <T>(type: WebSocketEventType, data: T) => wsManager.send(type, data),
     connect: () => wsManager.connect(),
     disconnect: () => wsManager.disconnect(),
+    simulateDisconnectForTest: () => wsManager.simulateDisconnectForTest(),
     on: (event: WebSocketEventType, callback: (...args: any[]) => void) =>
       wsManager.events.on(event, callback),
     off: (event: WebSocketEventType, callback: (...args: any[]) => void) =>

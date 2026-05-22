@@ -66,13 +66,15 @@ export class WebSocketManager {
   private isManuallyDisconnected: boolean = false;
   private isOffline: boolean = typeof navigator !== "undefined" ? !navigator.onLine : false;
   private onlineDetectedAt: number | null = null;
+  /** 测试重连：记录模拟断开时刻，用于统计断开到重连成功的耗时 */
+  private reconnectTestStartedAt: number | null = null;
 
   // reconnectAttempts: 当前累计重连次数。
   // maxReconnectAttempts: 最大重连次数（达到后停止自动重连，避免无限循环）。
-  // reconnectDelay: 初始重连延迟（会叠加指数退避）。
+  // reconnectDelay: 初始重连延迟（毫秒），指数退避基数；生产环境常用 1000，测试可改小便于观察
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
-  private reconnectDelay: number = 1000; // 初始重连延迟 1s
+  private reconnectDelay: number = 1;
 
   // maxReconnectDelay: 指数退避的上限（避免 delay 增长过大）。
   // heartbeatIntervalTime: 心跳间隔。
@@ -99,6 +101,7 @@ export class WebSocketManager {
 
   private handleOffline = (): void => {
     this.isOffline = true;
+    console.log(`[WebSocket] 用户断网时间: ${new Date().toISOString()}`);
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -109,6 +112,7 @@ export class WebSocketManager {
   private handleOnline = (): void => {
     this.isOffline = false;
     this.onlineDetectedAt = Date.now();
+    console.log(`[WebSocket] 用户网络恢复时间: ${new Date().toISOString()}`);
     if (!this.isConnected && !this.isConnecting && this.token) {
       void this.connect();
     }
@@ -148,10 +152,23 @@ export class WebSocketManager {
         this.ws = new WebSocket(`${this.url}?token=${this.token}`);
 
         this.ws.onopen = () => {
-          console.log(`[WebSocket] 连接成功: ${new Date().toISOString()}`);
+          const connectedAt = new Date().toISOString();
+          console.log(`[WebSocket] 连接成功: ${connectedAt}`);
+
+          if (this.reconnectTestStartedAt !== null) {
+            const elapsedMs = Date.now() - this.reconnectTestStartedAt;
+            console.log(`[WebSocket] 测试重连：用户连接上的时间: ${connectedAt}`);
+            console.log(
+              `[WebSocket] 测试重连：从断开到重连成功总耗时 ${elapsedMs}ms（含指数退避等待，当前为第 ${this.reconnectAttempts} 次重连尝试后成功）`,
+            );
+            this.reconnectTestStartedAt = null;
+          }
 
           if (this.onlineDetectedAt !== null) {
             const elapsedMs = Date.now() - this.onlineDetectedAt;
+            console.log(
+              `[WebSocket] 用户连接上的时间: ${connectedAt}`,
+            );
             console.log(
               `[WebSocket] 从检测到网络恢复到重连成功耗时: ${elapsedMs}ms`,
             );
@@ -161,9 +178,8 @@ export class WebSocketManager {
           this.isConnected = true;
           this.isConnecting = false;
 
-          // 连接成功后重置重连状态（下次断线从第 0 次开始退避）
+          // 连接成功后重置重连次数（退避间隔始终由 reconnectDelay 控制，不在此覆盖）
           this.reconnectAttempts = 0;
-          this.reconnectDelay = 1000;
 
           // 启动心跳检测
           this.startHeartbeat();
@@ -184,7 +200,13 @@ export class WebSocketManager {
         };
 
         this.ws.onclose = (event) => {
-          console.log(`[WebSocket] 连接断开: ${new Date().toISOString()}, code: ${event.code}`);
+          const disconnectedAt = new Date().toISOString();
+          console.log(`[WebSocket] 连接断开: ${disconnectedAt}, code: ${event.code}`);
+          if (this.reconnectTestStartedAt !== null) {
+            console.log(
+              `[WebSocket] 测试重连：用户断网时间: ${new Date(this.reconnectTestStartedAt).toISOString()}`,
+            );
+          }
           // onclose：连接已关闭（可能是断网、服务端主动断开、鉴权失败、浏览器 tab 关闭等）
           // 注意：此处会触发自动重连（autoReconnect）。
           this.isConnected = false;
@@ -276,6 +298,31 @@ export class WebSocketManager {
   }
 
   /**
+   * 模拟异常断开（用于测试心跳 + 指数退避重连耗时）。
+   * 不会标记为手动断开，onclose 后会走 autoReconnect。
+   */
+  public simulateDisconnectForTest(): void {
+    if (!this.ws || !this.isConnected) {
+      console.warn("[WebSocket] 测试重连：当前未连接，无法模拟断开");
+      return;
+    }
+
+    this.reconnectTestStartedAt = Date.now();
+    const disconnectedAt = new Date(this.reconnectTestStartedAt).toISOString();
+    console.log(`[WebSocket] 测试重连：开始模拟断开，用户断网时间: ${disconnectedAt}`);
+    console.log(
+      `[WebSocket] 测试重连：将走项目内指数退避重连（${this.formatReconnectBackoffSchedule()}），请在控制台观察重连日志`,
+    );
+
+    this.stopHeartbeat();
+    const socket = this.ws;
+    this.ws = null;
+    this.isConnected = false;
+    this.isConnecting = false;
+    socket.close(1000, "reconnect test");
+  }
+
+  /**
    * 获取连接状态
    */
   public getConnectionStatus(): boolean {
@@ -328,6 +375,19 @@ export class WebSocketManager {
     }
   }
 
+  /** 根据当前 reconnectDelay 生成退避间隔说明，用于日志 */
+  private formatReconnectBackoffSchedule(): string {
+    const parts: string[] = [];
+    for (let i = 0; i < this.maxReconnectAttempts; i++) {
+      const delay = Math.min(
+        this.reconnectDelay * Math.pow(2, i),
+        this.maxReconnectDelay,
+      );
+      parts.push(`${delay}ms`);
+    }
+    return parts.join(" → ");
+  }
+
   /**
    * 自动重连逻辑
    */
@@ -362,7 +422,7 @@ export class WebSocketManager {
 
     this.reconnectTimer = window.setTimeout(() => {
       // attempts 在真正发起 connect 之前递增。
-      // 这样第 1 次重连会打印 attempts=1，并且 delay 计算用 attempts=0 得到 1s。
+      // 第 1 次重连时 attempts 变为 1；delay 在定时前用 attempts=0 计算，即 reconnectDelay。
       this.reconnectAttempts++;
       console.log(`Reconnect attempt ${this.reconnectAttempts}...`);
       this.connect().catch((error) => {
