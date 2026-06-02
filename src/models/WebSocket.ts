@@ -17,6 +17,7 @@ export const WebSocketEvent = {
   FRIEND_REQUEST_ACCEPTED: "friend_request_accepted",
   FRIEND_REQUEST_REJECTED: "friend_request_rejected",
   FRIEND_REMOVED: "friend_removed",
+  MESSAGE_READ: "message_read",
 } as const;
 
 export type WebSocketEventType =

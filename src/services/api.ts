@@ -12,6 +12,14 @@ type ApiErrorBody = {
 
 let handlingUnauthorized = false;
 
+/** 登录/注册失败时的 401 不是「登录已过期」 */
+const PUBLIC_AUTH_PATHS = new Set(["/api/login", "/api/register"]);
+
+async function readErrorMessage(resp: Response): Promise<string> {
+  const errBody = (await resp.json().catch(() => null)) as ApiErrorBody | null;
+  return errBody?.error || errBody?.message || "请求失败";
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -59,41 +67,42 @@ export async function apiRequest<T>(
   // 统一处理 401：认为登录态失效。
   // handlingUnauthorized 是一个“节流阀”——避免多个请求同时 401 时重复 logout、重复 push、重复 alert。
   if (resp.status === 401) {
-    if (!handlingUnauthorized) {
-      handlingUnauthorized = true;
-      try {
-        useUserStore().logout();
-      } catch {
-        // ignore
+    const message = await readErrorMessage(resp);
+
+    if (token && !PUBLIC_AUTH_PATHS.has(path)) {
+      if (!handlingUnauthorized) {
+        handlingUnauthorized = true;
+        try {
+          useUserStore().logout();
+        } catch {
+          // ignore
+        }
+
+        try {
+          void router.push("/login");
+        } catch {
+          // ignore
+        }
+
+        try {
+          alert("登录已过期，请重新登录");
+        } catch {
+          // ignore
+        }
+
+        window.setTimeout(() => {
+          handlingUnauthorized = false;
+        }, 1000);
       }
 
-      try {
-        void router.push("/login");
-      } catch {
-        // ignore
-      }
-
-      try {
-        alert("登录已过期，请重新登录");
-      } catch {
-        // ignore
-      }
-
-      window.setTimeout(() => {
-        handlingUnauthorized = false;
-      }, 1000);
+      throw new Error(message);
     }
 
-    throw new Error("Unauthorized");
+    throw new Error(message);
   }
 
-  // 非 2xx：统一读取错误体。
-  // 服务端可能返回 { error } 或 { message }，否则 fallback 为“请求失败”。
   if (!resp.ok) {
-    const errBody = (await resp
-      .json()
-      .catch(() => null)) as ApiErrorBody | null;
-    throw new Error(errBody?.error || errBody?.message || "请求失败");
+    throw new Error(await readErrorMessage(resp));
   }
 
   // 204 No Content：没有响应体，直接返回 undefined。

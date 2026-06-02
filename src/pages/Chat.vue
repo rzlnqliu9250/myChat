@@ -378,6 +378,7 @@ const {
   handleSendMessage,
   handleSendMedia,
   handleMessageReceive,
+  handleMessageRead,
 } = useChatMessages({
   getToken: () => userStore.token,
   currentUser,
@@ -837,6 +838,10 @@ onMounted(() => {
 
   on(WebSocketEvent.MESSAGE_RECEIVE, (message: any) => {
     handleMessageReceive(message);
+  });
+
+  on(WebSocketEvent.MESSAGE_READ, (payload: any) => {
+    handleMessageRead(payload);
   });
 });
 </script>

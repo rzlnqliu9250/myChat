@@ -181,8 +181,13 @@ const handleLogin = async () => {
     router.push("/chat");
     
   } catch (error) {
+    const raw = error instanceof Error ? error.message : "登录失败";
+    const msg =
+      raw === "invalid credentials" || raw === "Unauthorized"
+        ? "账号或密码错误"
+        : raw;
+    alert(msg);
     console.error("登录失败:", error);
-    turnstileError.value = "登录失败，请重新完成验证";
     turnstileToken.value = null;
     if (turnstileWidgetId && window.turnstile) window.turnstile.reset(turnstileWidgetId);
   } finally {

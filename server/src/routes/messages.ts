@@ -4,6 +4,8 @@
 import { Router } from "express";
 import { supabase } from "../db/supabase";
 import { requireAuth } from "../middleware/auth";
+import { userManager } from "../managers/UserManager";
+import { WebSocketEvent } from "../types";
 
 export const messagesRouter = Router();
 
@@ -62,6 +64,72 @@ async function assertCanAccessMessage(params: {
     }
 
     return { ok: true };
+}
+
+function mapMessageRow(m: any, extra: Record<string, unknown> = {}) {
+    return {
+        id: String(m.id),
+        senderId: m.sender_id,
+        receiverId: m.receiver_id ?? null,
+        groupId: m.group_id ?? null,
+        content: m.content,
+        type:
+            (m as any).message_type ||
+            (m as any).type ||
+            ("text" as const),
+        mediaUrl: (m as any).media_url ?? null,
+        mediaMime: (m as any).media_mime ?? null,
+        mediaSize: (m as any).media_size ?? null,
+        isRead: Boolean(m.is_read),
+        isDelivered: Boolean(m.is_delivered),
+        createdAt: m.created_at,
+        ...extra,
+    };
+}
+
+const MESSAGE_SELECT_WITH_TYPE =
+    "id, sender_id, receiver_id, group_id, content, is_read, is_delivered, created_at, message_type, media_url, media_mime, media_size";
+const MESSAGE_SELECT_LEGACY =
+    "id, sender_id, receiver_id, group_id, content, is_read, created_at, message_type, media_url, media_mime, media_size";
+const MESSAGE_SELECT_FRIEND_WITH_TYPE =
+    "id, sender_id, receiver_id, content, is_read, is_delivered, created_at, message_type, media_url, media_mime, media_size";
+const MESSAGE_SELECT_FRIEND_LEGACY =
+    "id, sender_id, receiver_id, content, is_read, created_at, message_type, media_url, media_mime, media_size";
+
+async function queryMessagesWithFallback(
+    buildQuery: (select: string) => ReturnType<typeof supabase.from>,
+): Promise<{ data: any[] | null; error: any }> {
+    let result = await buildQuery(MESSAGE_SELECT_WITH_TYPE);
+    if (
+        result.error &&
+        String((result.error as any).message || "").includes("is_delivered")
+    ) {
+        result = await buildQuery(MESSAGE_SELECT_LEGACY);
+        if (result.data) {
+            result.data = result.data.map((row: any) => ({
+                ...row,
+                is_delivered: false,
+            }));
+        }
+    }
+
+    if (
+        result.error &&
+        (result.error as any).message &&
+        String((result.error as any).message).includes("message_type")
+    ) {
+        result = await buildQuery(
+            MESSAGE_SELECT_LEGACY.replace("message_type", "type"),
+        );
+        if (result.data) {
+            result.data = result.data.map((row: any) => ({
+                ...row,
+                is_delivered: row.is_delivered ?? false,
+            }));
+        }
+    }
+
+    return result;
 }
 
  messagesRouter.get("/messages/search", requireAuth, async (req, res, next) => {
@@ -235,6 +303,71 @@ async function assertCanAccessMessage(params: {
      }
  });
 
+ messagesRouter.post("/messages/read", requireAuth, async (req, res, next) => {
+     try {
+         const userId = req.userId;
+         if (!userId) {
+             res.status(401).json({ error: "Unauthorized" });
+             return;
+         }
+
+         const friendId =
+             typeof (req.body as any)?.friendId === "string"
+                 ? String((req.body as any).friendId).trim()
+                 : "";
+         if (!friendId) {
+             res.status(400).json({ error: "friendId is required" });
+             return;
+         }
+
+         const unread = await supabase
+             .from("messages")
+             .select("id")
+             .eq("sender_id", friendId)
+             .eq("receiver_id", userId)
+             .eq("is_read", false)
+             .is("group_id", null);
+
+         if (unread.error) {
+             next(unread.error);
+             return;
+         }
+
+         const ids = (unread.data || [])
+             .map((row: any) => Number(row.id))
+             .filter((id: number) => Number.isFinite(id));
+
+         if (!ids.length) {
+             res.json({ messageIds: [] });
+             return;
+         }
+
+         const updated = await supabase
+             .from("messages")
+             .update({ is_read: true })
+             .in("id", ids);
+
+         if (updated.error) {
+             next(updated.error);
+             return;
+         }
+
+         const messageIds = ids.map(String);
+         userManager.sendMessageToUser(friendId, {
+             type: WebSocketEvent.MESSAGE_READ,
+             data: {
+                 messageIds,
+                 readerId: userId,
+             },
+             timestamp: Date.now(),
+         });
+
+         res.json({ messageIds });
+     } catch (err) {
+         next(err);
+     }
+ });
+
 messagesRouter.get(
     "/messages/:friendId",
     requireAuth,
@@ -248,11 +381,6 @@ messagesRouter.get(
                 return;
             }
 
-            // 用 .or(...) 表达 “两种情况满足其一即可”：
-            // 情况 A：sender_id = 我 且 receiver_id = 朋友
-            // 情况 B：sender_id = 朋友 且 receiver_id = 我
-            // .order("created_at", { ascending: true })：按时间从旧到新排序，方便前端按顺序展示聊天记录。
-
             const buildQuery = (select: string) =>
                 supabase
                     .from("messages")
@@ -262,9 +390,22 @@ messagesRouter.get(
                     )
                     .order("created_at", { ascending: true });
 
-            let result = await buildQuery(
-                "id, sender_id, receiver_id, content, is_read, created_at, message_type, media_url, media_mime, media_size",
-            );
+            let result = await buildQuery(MESSAGE_SELECT_FRIEND_WITH_TYPE);
+
+            if (
+                result.error &&
+                String((result.error as any).message || "").includes(
+                    "is_delivered",
+                )
+            ) {
+                result = await buildQuery(MESSAGE_SELECT_FRIEND_LEGACY);
+                if (result.data) {
+                    result.data = result.data.map((row: any) => ({
+                        ...row,
+                        is_delivered: false,
+                    }));
+                }
+            }
 
             if (
                 result.error &&
@@ -272,8 +413,17 @@ messagesRouter.get(
                 String((result.error as any).message).includes("message_type")
             ) {
                 result = await buildQuery(
-                    "id, sender_id, receiver_id, content, is_read, created_at, type, media_url, media_mime, media_size",
+                    MESSAGE_SELECT_FRIEND_LEGACY.replace(
+                        "message_type",
+                        "type",
+                    ),
                 );
+                if (result.data) {
+                    result.data = result.data.map((row: any) => ({
+                        ...row,
+                        is_delivered: row.is_delivered ?? false,
+                    }));
+                }
             }
 
             if (result.error) {
@@ -281,27 +431,9 @@ messagesRouter.get(
                 return;
             }
 
-            // 返回格式：下划线转驼峰
-            // 数据库字段一般是 snake_case（如 sender_id）
-            // 前端习惯用 camelCase（如 senderId）
-            // 所以这里做了一层映射，前端就能直接用。
             const rows = (result.data || []) as any[];
             res.json({
-                messages: rows.map((m: any) => ({
-                    id: String(m.id),
-                    senderId: m.sender_id,
-                    receiverId: m.receiver_id,
-                    content: m.content,
-                    type:
-                        (m as any).message_type ||
-                        (m as any).type ||
-                        ("text" as const),
-                    mediaUrl: (m as any).media_url ?? null,
-                    mediaMime: (m as any).media_mime ?? null,
-                    mediaSize: (m as any).media_size ?? null,
-                    isRead: m.is_read,
-                    createdAt: m.created_at,
-                })),
+                messages: rows.map((m: any) => mapMessageRow(m)),
             });
         } catch (err) {
             next(err);

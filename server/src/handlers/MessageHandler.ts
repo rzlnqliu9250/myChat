@@ -97,6 +97,7 @@ class MessageHandler {
             receiver_id: receiverId,
             content: contentText,
             is_read: false,
+            is_delivered: false,
             media_url: typeof mediaUrl === "string" ? mediaUrl : null,
             media_mime: typeof mediaMime === "string" ? mediaMime : null,
             media_size: typeof mediaSize === "number" ? mediaSize : null,
@@ -188,6 +189,14 @@ class MessageHandler {
             receiverId,
             chatMessage,
         );
+
+        if (delivered) {
+            await supabase
+                .from("messages")
+                .update({ is_delivered: true })
+                .eq("id", messageId);
+        }
+
         //给发送方回一条“状态回执”（sent(已发送) 或 delivered(已送达)）
         const statusMessage: WebSocketMessage = {
             type: WebSocketEvent.MESSAGE_RECEIVE,

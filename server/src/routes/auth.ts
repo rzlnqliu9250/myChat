@@ -80,7 +80,7 @@ authRouter.post("/register", async (req, res, next) => {
         }
 
         if (existing.data) {
-            res.status(409).json({ error: "用户名已经存在" });
+            res.status(409).json({ error: "用户名已存在" });
             return;
         }
 
@@ -153,9 +153,7 @@ authRouter.post("/login", async (req, res, next) => {
         }
 
         if (!username || !password) {
-            res.status(400).json({
-                error: "username and password are required",
-            });
+            res.status(400).json({ error: "请输入账号和密码" });
             return;
         }
 
@@ -172,14 +170,14 @@ authRouter.post("/login", async (req, res, next) => {
 
         const user = userResult.data;
         if (!user) {
-            res.status(401).json({ error: "invalid credentials" });
+            res.status(401).json({ error: "账号或密码错误" });
             return;
         }
 
         //校验密码：用 bcrypt 比对
         const ok = await verifyPassword(password, user.password);
         if (!ok) {
-            res.status(401).json({ error: "invalid credentials" });
+            res.status(401).json({ error: "账号或密码错误" });
             return;
         }
 

@@ -3,10 +3,32 @@
  * 组合式函数：管理聊天消息的显示、发送、接收等。
  */
 import { ref, type ComputedRef, type Ref } from "vue";
-import { apiGet, apiRequest } from "../../services/api";
+import { apiGet, apiPost, apiRequest } from "../../services/api";
 import type { Message } from "../../models/Message";
+import type { MessageStatusValue } from "../../models/Message";
 import type { UiFriend, UiGroup } from "../../types/chat";
 import { WebSocketEvent } from "../../models/WebSocket";
+
+function mapHistoryStatus(params: {
+  senderId: string;
+  meId: string;
+  isRead?: boolean;
+  isDelivered?: boolean;
+}): MessageStatusValue {
+  if (params.senderId !== params.meId) {
+    return "delivered";
+  }
+  if (params.isRead) {
+    return "read";
+  }
+  if (params.isDelivered === true) {
+    return "delivered";
+  }
+  if (params.isDelivered === false) {
+    return "sent";
+  }
+  return "delivered";
+}
 
 async function applyFavoritesToMessages(params: {
   token: string;
@@ -72,6 +94,23 @@ export function useChatMessages(options: {
   // Chat.vue 会在切换会话时调用 fetchMessages/fetchGroupMessages 来刷新它。
   const messages = ref<Message[]>([]);
 
+  const markFriendMessagesAsRead = async (friendId: string): Promise<void> => {
+    const token = options.getToken();
+    if (!token || !friendId) {
+      return;
+    }
+
+    try {
+      await apiPost<{ messageIds: string[] }>(
+        "/api/messages/read",
+        { friendId },
+        token,
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const fetchMessages = async (friendId: string): Promise<void> => {
     const token = options.getToken();
     if (!token) {
@@ -93,6 +132,7 @@ export function useChatMessages(options: {
         mediaMime?: string | null;
         mediaSize?: number | null;
         isRead: boolean;
+        isDelivered?: boolean;
         createdAt: string;
       }[];
     };
@@ -107,8 +147,9 @@ export function useChatMessages(options: {
 
     // 把后端的 message DTO 映射为前端 UI Message：
     // - createdAt 字符串转成时间戳
-    // - isRead 映射到 status（read/delivered）
+    // - isRead / isDelivered 映射到发送方可见的 status
     // 注意：历史消息是“权威数据源”，这里会直接覆盖 messages。
+    const meId = options.currentUser.value?.id || "";
     messages.value = (data.messages || []).map((m) => {
       const ts = new Date(m.createdAt).getTime();
       return {
@@ -121,7 +162,12 @@ export function useChatMessages(options: {
         mediaUrl: m.mediaUrl ?? null,
         mediaMime: m.mediaMime ?? null,
         mediaSize: m.mediaSize ?? null,
-        status: m.isRead ? ("read" as const) : ("delivered" as const),
+        status: mapHistoryStatus({
+          senderId: m.senderId,
+          meId,
+          isRead: m.isRead,
+          isDelivered: m.isDelivered,
+        }),
         createTime: ts,
         updateTime: ts,
       } satisfies Message;
@@ -134,6 +180,7 @@ export function useChatMessages(options: {
     }
 
     void options.scrollMessagesToBottom();
+    void markFriendMessagesAsRead(friendId);
   };
 
   const searchMessages = async (params: {
@@ -204,6 +251,7 @@ export function useChatMessages(options: {
         mediaMime?: string | null;
         mediaSize?: number | null;
         isRead: boolean;
+        isDelivered?: boolean;
         createdAt: string;
       }[];
     };
@@ -215,6 +263,7 @@ export function useChatMessages(options: {
       throw new Error(msg && msg !== "请求失败" ? msg : "搜索聊天记录失败");
     }
 
+    const meId = options.currentUser.value?.id || "";
     return (data.messages || []).map((m) => {
       const ts = new Date(m.createdAt).getTime();
       return {
@@ -231,7 +280,12 @@ export function useChatMessages(options: {
         mediaUrl: m.mediaUrl ?? null,
         mediaMime: m.mediaMime ?? null,
         mediaSize: m.mediaSize ?? null,
-        status: m.isRead ? ("read" as const) : ("delivered" as const),
+        status: mapHistoryStatus({
+          senderId: m.senderId,
+          meId,
+          isRead: m.isRead,
+          isDelivered: m.isDelivered,
+        }),
         createTime: ts,
         updateTime: ts,
       } satisfies Message;
@@ -257,6 +311,7 @@ export function useChatMessages(options: {
         mediaMime?: string | null;
         mediaSize?: number | null;
         isRead: boolean;
+        isDelivered?: boolean;
         createdAt: string;
       }[];
     };
@@ -667,6 +722,10 @@ export function useChatMessages(options: {
         updateTime: message.updateTime || Date.now(),
       });
       void options.scrollMessagesToBottom("smooth");
+
+      if (message.senderId === friendId) {
+        void markFriendMessagesAsRead(String(friendId));
+      }
     }
 
     if (
@@ -690,6 +749,40 @@ export function useChatMessages(options: {
     }
   };
 
+  const handleMessageRead = (payload: {
+    messageIds?: string[];
+    readerId?: string;
+  }): void => {
+    const me = options.currentUser.value?.id;
+    if (!me || !Array.isArray(payload.messageIds)) {
+      return;
+    }
+
+    payload.messageIds.forEach((rawId) => {
+      const id = String(rawId);
+      const idx = messages.value.findIndex(
+        (m) =>
+          String(m.id) === id &&
+          String(m.senderId) === String(me) &&
+          !m.groupId,
+      );
+      if (idx < 0) {
+        return;
+      }
+
+      const existing = messages.value[idx];
+      if (!existing) {
+        return;
+      }
+
+      messages.value[idx] = {
+        ...existing,
+        status: "read",
+        updateTime: Date.now(),
+      };
+    });
+  };
+
   return {
     messages,
     fetchMessages,
@@ -698,5 +791,6 @@ export function useChatMessages(options: {
     handleSendMessage,
     handleSendMedia,
     handleMessageReceive,
+    handleMessageRead,
   };
 }

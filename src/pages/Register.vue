@@ -209,8 +209,11 @@ const handleRegister = async () => {
     router.push("/chat");
 
   } catch (error) {
+    const raw = error instanceof Error ? error.message : "注册失败";
+    const msg =
+      raw === "用户名已经存在" ? "用户名已存在" : raw;
+    alert(msg);
     console.error("注册失败:", error);
-    turnstileError.value = "注册失败，请重新完成验证";
     turnstileToken.value = null;
     if (turnstileWidgetId && window.turnstile) window.turnstile.reset(turnstileWidgetId);
   } finally {
